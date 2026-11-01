@@ -1,10 +1,11 @@
 # Durable local identity and protected local planning
 
-**State:** Proposed design for developer review. No feature implementation is authorized by this document.
+**State:** Approved by the developer on 2026-11-01 as the basis for implementation planning. No feature implementation is authorized by this document.
 **Prepared:** 2026-11-01 against `362613391`.
 **Parent:** [Plan 011](../../../plans/011-project-workspaces-and-github-integration.md).
 **Handoff:** [S1 blocked handoff](../plans/2026-11-01-project-workspaces-s1.md).
 **Evidence:** [S0 findings](../../../plans/011-project-workspaces/s0-evidence.md).
+**Implementation plan:** [S1-local](../plans/2026-11-01-project-workspaces-s1-local.md), prepared after design approval and awaiting plan review.
 
 ## Intent and scope
 
@@ -35,7 +36,7 @@ Planning uses a list and detail view. Archive and restore are the supported reve
 - Future execution must reject an incompatible conversation audience. This slice provides no
   conversation destination or handoff, so it cannot silently bypass that requirement.
 
-All other selections below are design recommendations, not additional developer decisions.
+The remaining selections were proposed as design recommendations and accepted with the full design.
 
 ## Current facts and their limits
 
@@ -267,7 +268,7 @@ Use the existing keyed host scope and a planning port. The renderer never reads 
 from a view or context. Shared list/detail/form controls belong in `packages/ui` and receive typed
 data/actions. Platform authority and draft persistence stay in the application adapter.
 
-Drafts are owner-only host database records, separate from committed objects and events. Persist
+Drafts are owner-only host database records, separate from committed objects and project events. Persist
 explicit saves of drafts without changing project revision; changing hosts waits for a completed
 draft save or offers an explicit discard. A save error retains the private session and editable input.
 Draft keys include local scope, object ID or create-form ID, and window draft ID. Two windows do not
@@ -344,9 +345,9 @@ established for S1-local after the acceptance evidence passes. This does not est
 projects, conversation handoff, remote grants or GitHub cached data. No live provider probe is needed
 or authorized by this design.
 
-After developer approval of this full description, prepare a separate executable S1-local plan with
-exact filenames, SQL ownership, interfaces, command limits, CI selection and focused verification.
-Until then, the existing S1 handoff remains blocked for implementation.
+The developer approved this full description. The separate S1-local plan specifies filenames, SQL
+ownership, interfaces, command limits, CI selection and focused verification. It awaits plan review;
+the existing execution handoff remains blocked and no feature implementation has started.
 
 ## Design review
 

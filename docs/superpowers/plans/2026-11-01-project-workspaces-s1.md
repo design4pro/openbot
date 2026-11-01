@@ -19,8 +19,10 @@ No new dependency, schema or wire operation is selected by this handoff.
 
 **Follow-up design:** [Durable local identity and protected local planning](../specs/2026-11-01-local-identity-protected-planning-design.md).
 The developer selected consistent profile-copy ownership and application-level protection, including
-mutual exclusion with remote viewing/control. The proposed design awaits review. It does not replace
-this blocked handoff with an executable plan or establish D2 through documentation alone.
+mutual exclusion with remote viewing/control, and approved the full design on 2026-11-01.
+The [S1-local implementation plan](2026-11-01-project-workspaces-s1-local.md) now awaits plan review.
+It covers the narrower manual planning slice. This execution handoff remains blocked; documentation
+alone does not establish D2 or enable real ticket execution.
 
 ## Decision
 
