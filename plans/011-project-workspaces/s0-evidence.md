@@ -102,4 +102,20 @@ S0 will not implement grants, change connector fallbacks or introduce process is
 
 ## Runtime results and handoff
 
-Pending Tasks 2-4. No gate is satisfied by this source inventory.
+Task 2 exercised real ChannelService, MailboxStore and SQLite in disposable profiles. The Bun CLI
+launches the installed Node runtime through the existing tsx dependency because Bun 1.3.14 cannot
+load node:sqlite. The report records the actual runtime and source file hashes; its commit is the
+checkout HEAD and can precede the scripts when a run has uncommitted changes.
+
+- Duplicate delivery keys preserve identity but accept a changed payload. A canonical fingerprint
+  is unsupported on this path.
+- A queued cancellation remains cancelled after recovery. Recovery and controlled host crashes
+  preserve delivery IDs. The busy scheduling hook excludes proof about real dispatch and worker discovery.
+- A real completion event before the interrupt hook acknowledges preserves the assignment and mailbox
+  terminal result. The task can remain paused by its newer stop revision. This is not process-exit proof.
+- Deleting a channel removes a command receipt shared with a surviving diagnostic aggregate event,
+  including after database reopen. This boundary cannot yet back project receipt retention.
+- The harness rejects an absent required case and a service-fixture claim of provider confinement.
+
+The lifecycle report contains six named cases. Local artifact paths and final readiness follow in Task 4.
+Access, credentials and the S1 handoff remain pending. No project gate is satisfied.
