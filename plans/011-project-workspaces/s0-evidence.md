@@ -1,11 +1,11 @@
 # S0 project execution evidence
 
-Status: Source inventory complete; runtime probes pending.
+Status: S0 diagnostic complete. Project release gates remain unresolved.
 Baseline: `e1a890d9b6afdfbdfb1acb45888f301f8f94270f`, macOS, Bun 1.3.14, Node v26.12.0.
 The package declares Bun 1.4.2; the installed runtime differs. Frozen installation and the focused
 host-key-rotation E2E passed on the installed runtime. Results do not certify the declared Bun version.
 Worktree: `codex/project-workspaces-s0`. The original checkout has unrelated UI changes; none were copied.
-No source owner was modified. Only diagnostic code and documents will change.
+No source owner was modified. Only diagnostic code and documents changed.
 
 ## Evidence meaning
 
@@ -139,4 +139,43 @@ and the real GitHubConnectorService with fake credentials, injected fetch and th
 - Synthetic credential directories are removed. Report artifacts contain credential classes only;
   the diagnostic checks that raw synthetic tokens are absent.
 
-The S1 handoff remains pending. No project gate is satisfied.
+## Final artifact and verification
+
+The canonical run is [report.json](../../.openbot-build/project-workspaces-s0/6fca2cdc-072c-4261-b723-4d9ef538d257/report.json),
+created at commit `94dcf832a5b77630516588553e2552dbcfd05cc0`. It contains 17 rows: 11 real-service/controlled-process
+rows and six explicit source-only limitations. All three groups ran sequentially. The report verifier
+passed; malformed copies with an absent case and a fixture confinement claim were rejected.
+The report records the runtime and SHA-256 of both diagnostic scripts. Product source remains at the
+baseline revision. Artifacts stay local and are not available from a remote Git checkout.
+
+| Review Focus / gate | Evidence row or artifact | Result and limit |
+| --- | --- | --- |
+| Host crash with surviving worker / D3 | `handoff-crash.json`, `surviving-worker.json` | IDs survive; controlled workers stay responsive. Busy hook excludes real boot/replacement proof. |
+| Cancellation and completion race / D1, D3 | `cancel-before-dispatch.json`, `late-completion.json` | Cancellation persists; terminal assignment/mailbox result precedes interrupt acknowledgement. No provider exit proof. |
+| Broader or changed audience / D2, D7 | `audience-route.json`; `access-summary`, `access-attachment`, `access-event` report rows | Route exposes result/memory to added members. Full transport and other derived read paths remain unverified. |
+| Local owner and remote identity / D2 | `remote-principal.json`; `access-local-ipc` report row | Literal `local` does not authenticate. Durable local ownership across sign-in/out remains unverified. |
+| Cross-aggregate deletion / D3 | `destination-delete-receipt.json` | Channel deletion removes shared receipt despite surviving aggregate event, including after reopen. |
+| Changed request / D3 | `duplicate-delivery.json` | Same key returns same result for changed payload; fingerprint conflict is absent. |
+| Scoped credentials / D1, D6 | `credentials-present.json`, `credentials-absent.json`; `credentials-no-proxy-*` rows | Git fallback and gh user file observed; proxy-failure cases and live scopes unverified. |
+| Revocation / D6, D7 | `credential-revocation.json` | New selections fail closed after disconnect; admitted selection keeps captured user token. No remote-effect revocation proof. |
+
+Focused validation: changed-file Biome, `bun run typecheck:node`, all S0 groups and saved-report
+verification passed. The normal commit hook also passed. One Biome warning is retained: the internal
+artifact writer accepts heterogeneous object details. Its report envelope is strictly decoded; runtime
+assertions own the detail values. No lint suppression was added. Broad checks and live-provider tests
+were not run. No CI integration is claimed.
+
+## Readiness decision
+
+| Mode | Release readiness | Implementation feasibility |
+| --- | --- | --- |
+| planning-only | Blocked: D2 is not established | Unverified; first design durable profile ownership and protected local data |
+| manual-trusted | Blocked: D1-D3 are not established | Unverified for either execution target; require mediation and real recovery evidence |
+| hard-gated | Blocked: D1-D3 are not established | Existing execution routes have demonstrated enforcement gaps; an architecture prerequisite is required |
+| unattended | Blocked: D1-D3 are not established | Existing routes lack project confinement; exact live-provider proof is also absent |
+
+Missing project tables and commands are expected future work, not the reason to call S1 infeasible.
+Unproven identity/process boundaries and demonstrated open routes prevent an implementation-ready
+execution design. No project gate is satisfied. See the
+[S1 blocked handoff](../../docs/superpowers/plans/2026-11-01-project-workspaces-s1.md) for prerequisite
+owners, acceptance evidence and the narrower local-planning design option.
