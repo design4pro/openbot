@@ -17,6 +17,11 @@ No new dependency, schema or wire operation is selected by this handoff.
 **Evidence:** [S0 evidence and readiness](../../../plans/011-project-workspaces/s0-evidence.md).
 **Diagnostic:** [S0 plan](2026-11-01-project-workspaces-s0.md).
 
+**Follow-up design:** [Durable local identity and protected local planning](../specs/2026-11-01-local-identity-protected-planning-design.md).
+The developer selected consistent profile-copy ownership and application-level protection, including
+mutual exclusion with remote viewing/control. The proposed design awaits review. It does not replace
+this blocked handoff with an executable plan or establish D2 through documentation alone.
+
 ## Decision
 
 S0 is complete as a bounded diagnostic. S1 is not an implementation-ready plan. The absence of project
