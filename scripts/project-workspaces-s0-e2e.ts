@@ -1,16 +1,22 @@
 // S0 diagnostics use real host stores and controlled child processes, never live providers.
 // Run: bun scripts/project-workspaces-s0-e2e.ts --group lifecycle
+
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { createOpenBotLogger, redactText } from "@openbot/logging";
+import { CHANNEL_CHATS_CAPABILITY, SIGNED_OUT_CHANNEL_MEMBER_ID } from "@openbot/contracts/ipc";
+import { CHANNEL_ROUTES } from "@openbot/contracts/team-protocol/channels-v1";
+import { createOpenBotLogger, redactText, registerSecretValue } from "@openbot/logging";
 import { Effect } from "effect";
 import { z } from "zod";
 import { runCauseEffect } from "../src/backend/effect-boundary";
+import type { TeamApiRequestContext } from "../src/main/team-api/request-context";
+import type { ChannelSettingsAgents } from "../src/main/team-api/route-channels";
 import type { Packet } from "./project-workspaces-s0/worker";
 
 // The installed Bun cannot load node:sqlite. Run the real database on Node.
@@ -468,6 +474,460 @@ async function runLifecycleProbes(runDirectory: string): Promise<EvidenceRow[]> 
   return rows;
 }
 
+function sourceRow(
+  id: string,
+  caseId: string,
+  guarantee: EvidenceRow["guarantee"],
+  source: string[],
+  observed: string,
+  limitation: string,
+): EvidenceRow {
+  return {
+    id,
+    caseId,
+    provider: "none",
+    mode: "source-only",
+    entryPoint: source[0] ?? "unknown",
+    subject: "host",
+    guarantee,
+    support: "unverified",
+    basis: "source",
+    source,
+    artifacts: [],
+    observed,
+    limitation,
+  };
+}
+
+async function runAccessProbes(runDirectory: string): Promise<EvidenceRow[]> {
+  const { TeamStore } = await import("../src/main/team-store");
+  const { routeChannels } = await import("../src/main/team-api/route-channels");
+  const host = await openHost(join(runDirectory, "access"));
+  const team = new TeamStore(join(runDirectory, "access/team.json"));
+  await runCauseEffect(team.initialize());
+  await runCauseEffect(team.configure("S0 host", "s0-owner", "synthetic-password-123"));
+  const addReader = async (name: string) => {
+    const invite = await runCauseEffect(team.createInvite("member"));
+    const result = await runCauseEffect(team.acceptInvite(invite.token, name, "synthetic-password-123"));
+    registerSecretValue(result.sessionToken);
+    return result;
+  };
+  const unavailable = () => {
+    throw new Error("Unselected settings operation");
+  };
+  const settings: ChannelSettingsAgents = {
+    listChannelMemories: (id) => host.channels.listMemories(id),
+    createChannelMemory: unavailable,
+    updateChannelMemory: unavailable,
+    deleteChannelMemory: unavailable,
+    clearChannelMemories: unavailable,
+    listChannelRoutines: unavailable,
+    createChannelRoutine: unavailable,
+    updateChannelRoutine: unavailable,
+    deleteChannelRoutine: unavailable,
+    testChannelRoutine: unavailable,
+    listChannelRoutineRuns: unavailable,
+  };
+  // This loopback fixture exercises the production route and authentication store separately.
+  // It does not certify TeamApiServer's transport, event filtering or IPC sender validation.
+  const server = createServer((request, response) => {
+    void (async () => {
+      const token = request.headers.authorization?.replace(/^Bearer /, "") ?? "";
+      const session = team.authenticateSession(token);
+      if (!session) {
+        response.writeHead(401);
+        response.end();
+        return;
+      }
+      const context: TeamApiRequestContext = {
+        request,
+        response,
+        method: request.method ?? "GET",
+        url: new URL(request.url ?? "/", "http://127.0.0.1"),
+        protocol: 9,
+        capabilities: new Set([CHANNEL_CHATS_CAPABILITY]),
+        ...session,
+        token,
+        agentLevel: () => "none",
+        json: (status, value) => {
+          response.writeHead(status, { "content-type": "application/json" });
+          response.end(JSON.stringify(value));
+          return "handled";
+        },
+        empty: (status) => {
+          response.writeHead(status);
+          response.end();
+          return "handled";
+        },
+      };
+      if ((await routeChannels(context, host.channels, settings)) === "unmatched") {
+        response.writeHead(404);
+        response.end();
+      }
+    })().catch(() => {
+      response.writeHead(500);
+      response.end();
+    });
+  });
+  const rows: EvidenceRow[] = [];
+  try {
+    const marker = `s0-content-${randomUUID()}`;
+    await host.seed();
+    const resultId = randomUUID();
+    host.channels.store.update(host.channels.store.get(host.channelId), {
+      messages: [
+        {
+          id: resultId,
+          channelId: host.channelId,
+          sequence: 0,
+          author: { kind: "agent", id: host.agent.id, name: "S0 agent" },
+          taskId: "s0-task",
+          superseded: false,
+          message: {
+            id: resultId,
+            text: marker,
+            author: "system",
+            createdAt: new Date().toISOString(),
+            status: "completed",
+          },
+        },
+      ],
+    });
+    host.channels.createMemory({ channelId: host.channelId, text: marker });
+    host.channels.store.saveSummary(host.channelId, { version: 1, throughSequence: 1, text: marker });
+    server.listen(0, "127.0.0.1");
+    await bounded(once(server, "listening"));
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const read = async (token: string, path: string) => {
+      const response = await fetch(`http://127.0.0.1:${address.port}${path}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify({ channelId: host.channelId }),
+        signal: AbortSignal.timeout(DEADLINE_MS),
+      });
+      const text = await response.text();
+      return { status: response.status, markerDisclosed: text.includes(marker) };
+    };
+    const first = await addReader("s0-first");
+    const initial = {
+      channelAndResult: await read(first.sessionToken, CHANNEL_ROUTES.read),
+      memory: await read(first.sessionToken, CHANNEL_ROUTES.memories),
+    };
+    const second = await addReader("s0-second");
+    const added = {
+      channelAndResult: await read(second.sessionToken, CHANNEL_ROUTES.read),
+      memory: await read(second.sessionToken, CHANNEL_ROUTES.memories),
+    };
+    for (const phase of [initial, added])
+      for (const outcome of Object.values(phase)) assert.deepEqual(outcome, { status: 200, markerDisclosed: true });
+    await runCauseEffect(team.removeMember(first.member.id));
+    const revoked = {
+      channelAndResult: await read(first.sessionToken, CHANNEL_ROUTES.read),
+      memory: await read(first.sessionToken, CHANNEL_ROUTES.memories),
+    };
+    for (const outcome of Object.values(revoked)) assert.deepEqual(outcome, { status: 401, markerDisclosed: false });
+    const remainingReader = await read(second.sessionToken, CHANNEL_ROUTES.read);
+    assert.equal(remainingReader.markerDisclosed, true);
+    rows.push(
+      await record(
+        runDirectory,
+        {
+          id: "audience-route",
+          caseId: "audience-and-derived-content",
+          provider: "none",
+          mode: "authenticated-route/agent-level-none",
+          entryPoint: "TeamStore.authenticateSession/routeChannels",
+          subject: "host",
+          guarantee: "audience",
+          support: "unsupported",
+          basis: "service-fixture",
+          source: ["src/main/team-api/route-channels.ts:74", "src/main/team-store.ts:1295"],
+          observed:
+            "Existing and newly added members read the channel result and memory with agent level none. Revoked membership fails authentication; the remaining member still reads the content.",
+          limitation:
+            "The HTTP wrapper is diagnostic wiring, not TeamApiServer. No project grant or restricted destination audience exists on these routes.",
+        },
+        {
+          initial,
+          added,
+          revoked,
+          remainingReader,
+          summaryStored: host.channels.store.summary(host.channelId).text === marker,
+        },
+      ),
+    );
+    const forged = await read(SIGNED_OUT_CHANNEL_MEMBER_ID, CHANNEL_ROUTES.read);
+    assert.equal(forged.status, 401);
+    rows.push(
+      await record(
+        runDirectory,
+        {
+          id: "remote-principal",
+          caseId: "local-owner-and-remote-principal",
+          provider: "none",
+          mode: "authentication-store/route-fixture",
+          entryPoint: "TeamStore.authenticateSession",
+          subject: "host",
+          guarantee: "identity",
+          support: "supported",
+          basis: "service-fixture",
+          source: ["src/main/team-store.ts:1295", "src/main/host-service.ts:1726"],
+          observed: "A supplied local identity string is not a valid session token.",
+          limitation:
+            "This proves token authentication only. The full remote transport and local IPC identity continuity remain unverified.",
+        },
+        { forged },
+      ),
+    );
+    for (const [path, source, reason] of [
+      [
+        "summary",
+        "src/backend/channel-history.ts",
+        "The summary is stored and read locally; no separate remote summary read exists in the selected channel route.",
+      ],
+      [
+        "attachment",
+        "src/main/team-api/route-files.ts",
+        "Attachment access uses AgentService and streaming transport outside this selected route fixture; project containment is absent in the inspected route.",
+      ],
+      [
+        "event",
+        "src/main/team-api-server.ts",
+        "WebSocket subscription and revocation need the complete TeamApiServer lifecycle; this fixture does not establish their filtering.",
+      ],
+      [
+        "local-ipc",
+        "src/main/host-service.ts:1726",
+        "channelActor uses a shared signed-out identifier then account/member identity. A headless route fixture cannot prove persistent profile ownership or account linking.",
+      ],
+    ] as const)
+      rows.push(
+        sourceRow(
+          `access-${path}`,
+          path === "local-ipc" ? "local-owner-and-remote-principal" : "audience-and-derived-content",
+          path === "local-ipc" ? "identity" : "audience",
+          [source],
+          "No runtime authorization claim for this path.",
+          reason,
+        ),
+      );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((done) => server.close(() => done()));
+    await host.close();
+  }
+  return rows;
+}
+
+async function runCredentialProbes(runDirectory: string): Promise<EvidenceRow[]> {
+  const { GitHubConnectorStore } = await import("../src/main/github-connector-store");
+  const { GitHubConnectorService } = await import("../src/main/github-connector-service");
+  const rows: EvidenceRow[] = [];
+  const userToken = `s0-user-${randomUUID()}`;
+  const repositoryToken = `s0-repository-${randomUUID()}`;
+  registerSecretValue(userToken);
+  registerSecretValue(repositoryToken);
+  const cipher = { encrypt: (value: string) => Buffer.from(value), decrypt: (value: Buffer) => value.toString() };
+  const directory = join(runDirectory, "synthetic-credentials");
+  const makeStore = async (path: string) => {
+    const store = new GitHubConnectorStore(path, cipher);
+    await runCauseEffect(
+      store.write({
+        accessToken: userToken,
+        accessTokenExpiresAt: null,
+        refreshToken: null,
+        refreshTokenExpiresAt: null,
+        login: "s0-user",
+        userId: 1,
+        avatarUrl: null,
+      }),
+    );
+    return store;
+  };
+  const answer = (present: boolean) =>
+    Response.json({
+      installations: present
+        ? [
+            {
+              installationId: 1,
+              account: "s0",
+              token: repositoryToken,
+              expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+              repositories: ["s0/repository"],
+            },
+          ]
+        : [],
+    });
+  try {
+    for (const present of [true, false]) {
+      const toolDirectory = join(directory, present ? "present" : "absent");
+      const store = await makeStore(join(toolDirectory, "store.json"));
+      let requests = 0;
+      const connector = new GitHubConnectorService({
+        store,
+        toolDirectory,
+        app: { clientId: "s0", slug: "s0" },
+        apiUrl: "http://127.0.0.1:1",
+        openExternal: async () => {
+          throw new Error("No browser in S0");
+        },
+        fetch: async (url) => {
+          assert.equal(url, "http://127.0.0.1:1/v1/github/installation-tokens");
+          requests++;
+          return answer(present);
+        },
+      });
+      try {
+        await runCauseEffect(connector.load());
+        const tokens = await runCauseEffect(connector.repositoryTokens("s0/repository"));
+        assert.ok(tokens);
+        assert.equal(tokens.bot === repositoryToken, present);
+        const mcp = connector.mcpServer();
+        assert.ok(mcp);
+        assert.equal(new URL(mcp.url).hostname, "127.0.0.1");
+        const authorization = await runCauseEffect(connector.mcpAuthorization());
+        assert.ok(authorization && authorization !== userToken);
+        const environment = connector.agentEnvironment({});
+        const credential = execFileSync("git", ["credential", "fill"], {
+          cwd: ROOT,
+          env: {
+            PATH: process.env.PATH,
+            GIT_CONFIG_GLOBAL: "/dev/null",
+            GIT_CONFIG_NOSYSTEM: "1",
+            GIT_TERMINAL_PROMPT: "0",
+            ...environment,
+          },
+          input: "protocol=https\nhost=github.com\npath=s0/repository.git\n\n",
+          encoding: "utf8",
+          timeout: DEADLINE_MS,
+        });
+        assert.ok(credential.includes(`password=${present ? repositoryToken : userToken}`));
+        const gh = await readFile(join(environment.GH_CONFIG_DIR ?? "", "hosts.yml"), "utf8");
+        assert.ok(gh.includes(userToken));
+        const mode = `proxy-available/repository-token-${present ? "present" : "absent"}`;
+        rows.push(
+          await record(
+            runDirectory,
+            {
+              id: `credentials-${present ? "present" : "absent"}`,
+              caseId: "credential-fallback",
+              provider: "github-connector",
+              mode,
+              entryPoint: "GitHubConnectorService/real Git credential helper",
+              subject: "host",
+              guarantee: "credential-selection",
+              support: "unsupported",
+              basis: "service-fixture",
+              source: ["src/main/github-connector-service.ts:458", "src/main/github-connector-service.ts:497"],
+              observed: `MCP selects a loopback secret; Git selects the ${present ? "repository" : "user"} token; gh configuration contains the user token.`,
+              limitation:
+                "No project-specific fail-closed policy. gh file selection is inspected, not a gh subprocess. The proxy upstream is hard-coded and is never contacted.",
+            },
+            {
+              requests,
+              mcp: "loopback-secret",
+              git: present ? "repository-token" : "user-token",
+              gh: "user-token-file",
+              upstreamRequests: 0,
+            },
+          ),
+        );
+        const unavailable = sourceRow(
+          `credentials-no-proxy-${present ? "present" : "absent"}`,
+          "credential-fallback",
+          "credential-selection",
+          ["src/main/github-connector-service.ts:458", "src/main/github-connector-service.ts:953"],
+          "Source falls back to the user token and public GitHub MCP URL when the local proxy does not start.",
+          "No public failure injection for proxy startup. The proxy retries a busy port; S0 does not alter production adapters or contact the hard-coded upstream.",
+        );
+        unavailable.mode = `proxy-unavailable/repository-token-${present ? "present" : "absent"}`;
+        rows.push(unavailable);
+        await runCauseEffect(connector.disconnect(false));
+        assert.equal(await runCauseEffect(connector.mcpAuthorization()), null);
+        assert.equal(await runCauseEffect(connector.repositoryTokens("s0/repository")), null);
+        assert.deepEqual(connector.agentEnvironment({}), {});
+        const disconnected = await fetch(mcp.url, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${authorization}` },
+          body: "{}",
+          signal: AbortSignal.timeout(DEADLINE_MS),
+        });
+        assert.equal(disconnected.status, 503);
+      } finally {
+        await runCauseEffect(connector.dispose());
+      }
+    }
+    const admitted = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const store = await makeStore(join(directory, "revocation/store.json"));
+    const connector = new GitHubConnectorService({
+      store,
+      toolDirectory: join(directory, "revocation"),
+      app: { clientId: "s0", slug: "s0" },
+      apiUrl: "http://127.0.0.1:1",
+      openExternal: async () => {
+        throw new Error("No browser in S0");
+      },
+      fetch: async (url) => {
+        assert.equal(url, "http://127.0.0.1:1/v1/github/installation-tokens");
+        admitted.resolve();
+        await bounded(release.promise);
+        return answer(true);
+      },
+    });
+    try {
+      const inFlight = runCauseEffect(connector.repositoryTokens("s0/repository"));
+      await bounded(admitted.promise);
+      await runCauseEffect(connector.disconnect(false));
+      assert.equal(await runCauseEffect(connector.repositoryTokens("s0/repository")), null);
+      release.resolve();
+      const old = await bounded(inFlight);
+      assert.equal(old?.user, userToken);
+      assert.equal(old?.bot, null);
+      assert.equal(await runCauseEffect(connector.repositoryTokens("s0/repository")), null);
+      rows.push(
+        await record(
+          runDirectory,
+          {
+            id: "credential-revocation",
+            caseId: "credential-revocation",
+            provider: "github-connector",
+            mode: "injected-fetch/admission-barrier",
+            entryPoint: "GitHubConnectorService.repositoryTokens/disconnect",
+            subject: "host",
+            guarantee: "credential-selection",
+            support: "supported",
+            basis: "service-fixture",
+            source: ["src/main/github-connector-service.ts:302", "src/main/github-bot-tokens.ts:113"],
+            observed:
+              "New credential requests return null after disconnect; an admitted request returns its previously captured user token and no newly renewed repository token. Loaded proxy rejects new calls with 503.",
+            limitation:
+              "This is local credential selection, not remote GitHub token revocation or cancellation of an admitted external effect.",
+          },
+          {
+            newRequests: "no-token",
+            admittedRequest: "previous-user-token",
+            renewalOutcome: "discarded",
+            proxyAfterDisconnect: 503,
+          },
+        ),
+      );
+    } finally {
+      release.resolve();
+      await runCauseEffect(connector.dispose());
+    }
+    for (const row of rows)
+      for (const artifact of row.artifacts) {
+        const data = await readFile(join(runDirectory, artifact), "utf8");
+        assert.ok(!data.includes(userToken) && !data.includes(repositoryToken), "Raw synthetic token in artifact");
+      }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return rows;
+}
+
 async function main() {
   const verify = process.argv.indexOf("--verify-report");
   if (verify !== -1) {
@@ -506,8 +966,8 @@ async function main() {
   };
   try {
     for (const group of groups) {
-      if (group !== "lifecycle") throw new Error(`Missing group: ${group}`);
-      report.rows.push(...(await runLifecycleProbes(runDirectory)));
+      const run = { lifecycle: runLifecycleProbes, access: runAccessProbes, credentials: runCredentialProbes }[group];
+      report.rows.push(...(await run(runDirectory)));
     }
     report.probeRunPassed = true;
     validateReport(report);

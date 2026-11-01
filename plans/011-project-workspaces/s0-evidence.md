@@ -118,4 +118,25 @@ checkout HEAD and can precede the scripts when a run has uncommitted changes.
 - The harness rejects an absent required case and a service-fixture claim of provider confinement.
 
 The lifecycle report contains six named cases. Local artifact paths and final readiness follow in Task 4.
-Access, credentials and the S1 handoff remain pending. No project gate is satisfied.
+Task 3 exercised the production channel route and TeamStore behind a diagnostic loopback wrapper,
+and the real GitHubConnectorService with fake credentials, injected fetch and the real Git helper.
+
+- Existing and newly invited members can read synthetic channel results and memories even when
+  the fixture supplies agent access level `none`. Removing membership causes authentication to fail;
+  the remaining member keeps access. There is no project-grant check on this route.
+- The actual signed-out channel identifier (`local`) cannot authenticate as a session token. This
+  does not prove local profile identity continuity, IPC sender validation or the full Team API transport.
+- Local summary storage is exercised. Remote summary, attachment and event authorization remain
+  unverified; the report names each owner and the unavailable runtime boundary.
+- With a working proxy, MCP selects its loopback secret. The real Git helper selects the repository
+  token when present and the user token otherwise. Generated `gh` configuration contains the user
+  token. No `gh` process or real GitHub request runs.
+- Both unavailable-proxy combinations remain source-only: the code selects the public MCP URL and
+  user token, but no safe public seam forces a complete startup failure. Forwarding is not exercised.
+- Disconnect makes new credential selections empty and the loaded proxy rejects a new call with 503.
+  A previously admitted token-selection call retains its captured user token; renewal discards the
+  repository token returned after disconnect. This is not revocation of remote effects or tokens.
+- Synthetic credential directories are removed. Report artifacts contain credential classes only;
+  the diagnostic checks that raw synthetic tokens are absent.
+
+The S1 handoff remains pending. No project gate is satisfied.
