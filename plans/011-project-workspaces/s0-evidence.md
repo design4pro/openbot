@@ -141,8 +141,8 @@ and the real GitHubConnectorService with fake credentials, injected fetch and th
 
 ## Final artifact and verification
 
-The canonical run is [report.json](../../.openbot-build/project-workspaces-s0/6fca2cdc-072c-4261-b723-4d9ef538d257/report.json),
-created at commit `94dcf832a5b77630516588553e2552dbcfd05cc0`. It contains 17 rows: 11 real-service/controlled-process
+The canonical run is [report.json](../../.openbot-build/project-workspaces-s0/f080ddaa-caab-4172-987a-d63d9f43dff7/report.json),
+created at commit `eec2b0c1b85905d01e48efbaff9cd175f8d74ae1`. It contains 17 rows: 11 real-service/controlled-process
 rows and six explicit source-only limitations. All three groups ran sequentially. The report verifier
 passed; malformed copies with an absent case and a fixture confinement claim were rejected.
 The report records the runtime and SHA-256 of both diagnostic scripts. Product source remains at the
@@ -162,8 +162,12 @@ baseline revision. Artifacts stay local and are not available from a remote Git 
 Focused validation: changed-file Biome, `bun run typecheck:node`, all S0 groups and saved-report
 verification passed. The normal commit hook also passed. One Biome warning is retained: the internal
 artifact writer accepts heterogeneous object details. Its report envelope is strictly decoded; runtime
-assertions own the detail values. No lint suppression was added. Broad checks and live-provider tests
-were not run. No CI integration is claimed.
+assertions own the detail values. No lint suppression was added. Independent review found a false-positive path when a worker exited between acknowledgements.
+The reproduction passed incorrectly before the fix and failed correctly after it. The harness now
+requires a response after host recovery and `stopped` plus exit code 0 during normal cleanup. The
+negative run is [report.json](../../.openbot-build/project-workspaces-s0/b77e9952-b584-478d-a796-1824af3aa08c/report.json).
+The review also prompted a separate event read after database reopen; its count is now in the artifact.
+No review finding remains deferred. Broad checks and live-provider tests were not run. No CI integration is claimed.
 
 ## Readiness decision
 

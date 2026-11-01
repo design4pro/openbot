@@ -2,7 +2,7 @@
 
 **State:** BLOCKED for implementation planning, not authorized for feature implementation.
 Prepared on 2026-11-01 from S0 source inspection and the diagnostic at
-`94dcf832a5b77630516588553e2552dbcfd05cc0`.
+`eec2b0c1b85905d01e48efbaff9cd175f8d74ae1`.
 
 **Goal:** Establish the missing identity and execution boundaries before writing an executable S1 plan.
 
@@ -106,6 +106,11 @@ Run one diagnostic group at a time, or `all` for the sequential S0 set:
 bun scripts/project-workspaces-s0-e2e.ts --group all
 bun scripts/project-workspaces-s0-e2e.ts --verify-report .openbot-build/project-workspaces-s0/<run-id>/report.json
 ```
+
+To reproduce the harness failure check, run
+`bun scripts/project-workspaces-s0-e2e.ts --group lifecycle --fault-worker-exit`.
+Expected: exit 1, `probeRunPassed: false`, and an unexpected worker-exit diagnostic. This deliberately
+terminates only the controlled worker after its start acknowledgement.
 
 Use the printed run ID. A passing report means the diagnostic completed, including negative results.
 Source hashes identify the exact scripts; the commit identifies the checkout revision. No report is
