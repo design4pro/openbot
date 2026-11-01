@@ -171,10 +171,18 @@ async function bounded<T>(promise: Promise<T>): Promise<T> {
   }
 }
 
-async function childProcess(role: "host" | "worker", runId: string, directory: string) {
+async function childProcess(role: "host" | "worker", runId: string, directory: string, exitAfterStart = false) {
   const child = spawn(
     process.execPath,
-    ["--import", "tsx", join(ROOT, "scripts/project-workspaces-s0/worker.ts"), role, runId, directory],
+    [
+      "--import",
+      "tsx",
+      join(ROOT, "scripts/project-workspaces-s0/worker.ts"),
+      role,
+      runId,
+      directory,
+      ...(exitAfterStart ? ["--exit-after-start"] : []),
+    ],
     {
       cwd: ROOT,
       stdio: ["pipe", "pipe", "pipe"],
@@ -183,6 +191,8 @@ async function childProcess(role: "host" | "worker", runId: string, directory: s
   );
   const exited = once(child, "exit");
   let stderr = "";
+  let failure: Error | null = null;
+  let expectedExit: "kill" | "stop" | null = null;
   child.stderr.on("data", (data: Buffer) => {
     stderr = (stderr + data.toString()).slice(-8000);
   });
@@ -194,6 +204,7 @@ async function childProcess(role: "host" | "worker", runId: string, directory: s
   const transcript: Packet[] = [];
   const lines = createInterface({ input: child.stdout });
   function fail(error: Error) {
+    failure ??= error;
     for (const waiter of pending.values()) {
       clearTimeout(waiter.timer);
       waiter.reject(error);
@@ -216,11 +227,14 @@ async function childProcess(role: "host" | "worker", runId: string, directory: s
     }
   });
   child.on("error", fail);
-  child.on("exit", () => {
+  child.on("exit", (code, signal) => {
     lines.close();
-    fail(new Error(`Child exited: ${redactText(stderr)}`));
+    if (expectedExit === null || (expectedExit === "stop" && (code !== 0 || signal !== null)))
+      fail(new Error(`Unexpected ${role} exit: code=${code}, signal=${signal}; ${redactText(stderr)}`));
+    else if (pending.size) fail(new Error(`${role} exited before acknowledgement`));
   });
   const receive = (id: string): Promise<Packet> => {
+    if (failure) return Promise.reject(failure);
     const packet = received.get(id);
     if (packet) {
       received.delete(id);
@@ -235,6 +249,7 @@ async function childProcess(role: "host" | "worker", runId: string, directory: s
     });
   };
   const send = (type: Packet["type"], action?: Packet["action"]) => {
+    if (failure) return Promise.reject(failure);
     const id = randomUUID();
     const answer = receive(id);
     child.stdin.write(`${JSON.stringify({ runId, id, type, action })}\n`);
@@ -251,16 +266,29 @@ async function childProcess(role: "host" | "worker", runId: string, directory: s
     transcript,
     send,
     async kill() {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
-      await exited;
+      if (child.exitCode === null && child.signalCode === null) {
+        expectedExit = "kill";
+        child.kill("SIGKILL");
+      }
+      await bounded(exited);
+      if (failure) throw failure;
     },
     async close() {
       try {
-        if (child.exitCode === null && child.signalCode === null) assert.equal((await send("stop")).type, "stopped");
+        if (failure) throw failure;
+        assert.equal(child.exitCode, null, "Child exited before stop acknowledgement");
+        assert.equal(child.signalCode, null, "Child signalled before stop acknowledgement");
+        expectedExit = "stop";
+        assert.equal((await send("stop")).type, "stopped");
+        child.stdin.end();
+        await bounded(exited);
+        if (failure) throw failure;
+        assert.equal(child.exitCode, 0);
+        assert.equal(child.signalCode, null);
       } finally {
         child.stdin.end();
-        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-        await exited;
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        await bounded(exited);
       }
     },
   };
@@ -316,16 +344,20 @@ async function runLifecycleProbes(runDirectory: string): Promise<EvidenceRow[]> 
     );
     assert.ok(host.database.commandResult(commandId));
     await runCauseEffect(host.channels.deleteChannel(host.channelId));
-    const remaining = host.database.connection
-      .prepare(
-        "SELECT count(*) AS count FROM orchestration_events WHERE command_id = ? AND aggregate_type = 's0-diagnostic'",
-      )
-      .get(commandId);
+    const readRemainingEvents = () =>
+      host.database.connection
+        .prepare(
+          "SELECT count(*) AS count FROM orchestration_events WHERE command_id = ? AND aggregate_type = 's0-diagnostic'",
+        )
+        .get(commandId);
+    const remaining = readRemainingEvents();
     assert.equal(host.channels.store.exists(host.channelId), false);
     assert.equal(remaining?.count, 1);
     assert.equal(host.database.commandResult(commandId), undefined);
     host.database.close();
     await runCauseEffect(host.database.initialize());
+    const remainingAfterReopen = readRemainingEvents();
+    assert.equal(remainingAfterReopen?.count, 1);
     assert.equal(host.database.commandResult(commandId), undefined);
     rows.push(
       await record(
@@ -339,6 +371,7 @@ async function runLifecycleProbes(runDirectory: string): Promise<EvidenceRow[]> 
         ),
         {
           remaining,
+          remainingAfterReopen,
           receiptPresent: host.database.commandResult(commandId) !== undefined,
           channelPresent: host.channels.store.exists(host.channelId),
         },
@@ -357,7 +390,12 @@ async function runLifecycleProbes(runDirectory: string): Promise<EvidenceRow[]> 
     try {
       const enqueued = await first.send("start", "enqueue");
       if (boundary !== "enqueue") {
-        worker = await childProcess("worker", runId, state);
+        worker = await childProcess(
+          "worker",
+          runId,
+          state,
+          boundary === "running" && process.argv.includes("--fault-worker-exit"),
+        );
         await worker.send("start");
         await first.send("start", "running");
       }
@@ -368,6 +406,11 @@ async function runLifecycleProbes(runDirectory: string): Promise<EvidenceRow[]> 
         const recovered = await next.send("start", "recover");
         assert.equal(recovered.deliveryId, enqueued.deliveryId);
         assert.equal(recovered.schedules, 0);
+        if (worker) {
+          const alive = await worker.send("start", "inspect");
+          assert.equal(alive.type, "effect-admitted");
+          assert.equal(alive.starts, 1);
+        }
         crashes.push({
           boundary,
           enqueued,
@@ -380,8 +423,11 @@ async function runLifecycleProbes(runDirectory: string): Promise<EvidenceRow[]> 
         await next.close();
       }
     } finally {
-      await first.kill();
-      await worker?.close();
+      try {
+        await first.kill();
+      } finally {
+        await worker?.close();
+      }
     }
   }
   rows.push(
@@ -952,6 +998,7 @@ async function main() {
     platform: process.platform,
     versions: {
       node: process.versions.node,
+      faultInjection: process.argv.includes("--fault-worker-exit") ? "worker-exit-after-start" : "none",
       runnerSha256: createHash("sha256")
         .update(await readFile(import.meta.filename))
         .digest("hex"),

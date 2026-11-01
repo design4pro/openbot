@@ -126,7 +126,7 @@ export const packetSchema = z.object({
   runId: z.string(),
   id: z.string(),
   type: z.enum(["ready", "start", "started", "effect-admitted", "finish", "completed", "stop", "stopped"]),
-  action: z.enum(["enqueue", "running", "terminal", "recover"]).optional(),
+  action: z.enum(["enqueue", "running", "terminal", "recover", "inspect"]).optional(),
   deliveryId: z.string().optional(),
   status: z.string().optional(),
   taskState: z.string().optional(),
@@ -156,8 +156,15 @@ async function main() {
         break;
       }
       if (!host) {
+        if (packet.action === "inspect") {
+          emit({ runId, id: packet.id, type: "effect-admitted", starts });
+          continue;
+        }
         if (packet.type === "start") starts++;
         emit({ runId, id: packet.id, type: packet.type === "finish" ? "completed" : "started", starts });
+        if (packet.type === "start" && process.argv.includes("--exit-after-start")) {
+          process.stdout.write("", () => process.exit(23));
+        }
         continue;
       }
       if (packet.action === "enqueue") await host.seed();
