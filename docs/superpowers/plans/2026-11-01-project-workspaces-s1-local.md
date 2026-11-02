@@ -10,7 +10,7 @@
 
 **Spec:** [Accepted design](../specs/2026-11-01-local-identity-protected-planning-design.md).
 **Context:** [S0 evidence](../../../plans/011-project-workspaces/s0-evidence.md), [blocked execution handoff](2026-11-01-project-workspaces-s1.md).
-**State:** Ready for plan review. Design approved on 2026-11-01; implementation has not started.
+**State:** Execution in progress; approved on 2026-11-02. Tasks 1, 3, 5 and 6 have passed their focused service checks. Task 2 has a committed file-policy implementation and passing service checks, but its full application proof is pending. Task 4 needs an isolated native test desktop; approval to start OrbStack is pending. Tasks 7-9 and the final independent branch review remain open. Private planning has no IPC or UI entry point yet.
 **Source baseline:** `d3f381835`. Recheck source locations and the next unused migration before execution.
 
 ## Global Constraints
