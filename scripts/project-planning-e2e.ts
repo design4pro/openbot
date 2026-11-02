@@ -25,7 +25,11 @@ if (args[0] === "--identity-worker" && args.length === 2) {
 } else if (args[0] === "--verify-report" && args.length === 2) {
   verifyPlanningReport(JSON.parse(await readFile(args[1] ?? "", "utf8")));
   logger.info("Planning report verified.");
-} else if (args.length === 2 && args[0] === "--group" && (args[1] === "identity" || args[1] === "files-service")) {
+} else if (
+  args.length === 2 &&
+  args[0] === "--group" &&
+  (args[1] === "identity" || args[1] === "files-service" || args[1] === "admission")
+) {
   const group = args[1];
   const runId = randomUUID();
   const output = join(root, ".openbot-build", "project-planning", runId, group);
@@ -51,6 +55,14 @@ if (args[0] === "--identity-worker" && args.length === 2) {
       "src/backend/workspace-paths.ts",
       "src/main/team-api/route-files.ts",
     );
+  if (group === "admission")
+    sourceFiles.push(
+      "scripts/project-planning/admission.ts",
+      "src/main/private-planning-admission.ts",
+      "src/main/screen-capture.ts",
+      "src/backend/agent/screen-capture.ts",
+      "src/backend/agent/openbot-tool-router.ts",
+    );
   for (const file of sourceFiles)
     sourceHashes[file] = createHash("sha256")
       .update(await readFile(join(root, file)))
@@ -73,7 +85,9 @@ if (args[0] === "--identity-worker" && args.length === 2) {
     report.cases =
       group === "identity"
         ? await identityCases(fixture)
-        : await (await import("./project-planning/files")).fileServiceCases(fixture);
+        : group === "files-service"
+          ? await (await import("./project-planning/files")).fileServiceCases(fixture)
+          : await (await import("./project-planning/admission")).admissionCases();
     report.passed = true;
     verifyPlanningReport(report);
   } catch (error) {

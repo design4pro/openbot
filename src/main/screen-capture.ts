@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { sourceText } from "@openbot/i18n/source";
 import { createOpenBotLogger, toLogValue } from "@openbot/logging";
 import { Effect } from "effect";
@@ -9,6 +10,7 @@ import {
   type ScreenCaptureRequest,
   type ScreenCaptureSources,
 } from "../backend/agent/screen-capture";
+import type { PrivatePlanningAdmission, PublicActivityKind } from "./private-planning-admission";
 
 /**
  * Captures the desktop for `capture_screen` with Electron's `desktopCapturer`.
@@ -59,6 +61,7 @@ interface CaptureDisplay {
 }
 
 export interface ScreenCapturerOptions {
+  admission: PrivatePlanningAdmission;
   platform: NodeJS.Platform;
   /** `systemPreferences.getMediaAccessStatus("screen")`. Read on macOS only. */
   screenAccess: () => string;
@@ -136,7 +139,32 @@ export class ScreenCapturer implements ScreenCaptureHost {
     this.#options = options;
   }
 
-  readonly listSources = Effect.fn("ScreenCapturer.listSources")(function* (
+  #withPublicActivity<A, E, R>(kind: PublicActivityKind, operation: Effect.Effect<A, E, R>) {
+    return Effect.acquireUseRelease(
+      this.#options.admission
+        .acquirePublic(randomUUID(), kind)
+        .pipe(Effect.mapError(() => failure(sourceText("error.agent.privatePlanning")))),
+      () => operation,
+      (lease) => Effect.sync(() => lease.releaseVerified()),
+    );
+  }
+
+  withCaptureLease<A, E, R>(operation: Effect.Effect<A, E, R>) {
+    return this.#withPublicActivity("capture", operation);
+  }
+
+  readonly listSources = Effect.fn("ScreenCapturer.listSources")(function* (this: ScreenCapturer) {
+    return yield* this.#withPublicActivity("capture_sources", this.#listSources());
+  });
+
+  readonly capture = Effect.fn("ScreenCapturer.capture")(function* (
+    this: ScreenCapturer,
+    request: ScreenCaptureRequest,
+  ) {
+    return yield* this.#withPublicActivity("capture", this.#capture(request));
+  });
+
+  readonly #listSources = Effect.fn("ScreenCapturer.listSources")(function* (
     this: ScreenCapturer,
   ): Effect.fn.Return<ScreenCaptureSources, ScreenCaptureFailed> {
     yield* this.#requirePermission();
@@ -154,7 +182,7 @@ export class ScreenCapturer implements ScreenCaptureHost {
     };
   });
 
-  readonly capture = Effect.fn("ScreenCapturer.capture")(function* (
+  readonly #capture = Effect.fn("ScreenCapturer.capture")(function* (
     this: ScreenCapturer,
     request: ScreenCaptureRequest,
   ): Effect.fn.Return<ScreenCaptureImage, ScreenCaptureFailed> {
@@ -225,7 +253,8 @@ export class ScreenCapturer implements ScreenCaptureHost {
     return Effect.tryPromise({
       try: () => this.#options.getSources({ types, thumbnailSize }),
       catch: captureFailed("sources"),
-    });
+      // Electron cannot cancel getSources. Its public lease must outlive the actual native promise.
+    }).pipe(Effect.uninterruptible);
   }
 
   /** An empty image is a capture that the system refused, not a black screen. */

@@ -39,6 +39,7 @@ import { LocalSignInWindows } from "./local-sign-in-window";
 import { LocalSkillLibrary } from "./local-skill-library";
 import { localSkillTools } from "./local-skill-tools";
 import { MAC_PERMISSION_URLS } from "./mac-permission-urls";
+import { PrivatePlanningAdmission, PrivatePlanningError } from "./private-planning-admission";
 import { PushNotificationStore } from "./push-notification-store";
 import { DESKTOP_USE_MS } from "./push-notifications";
 import { RemoteWorkflowError, toRemoteWorkflowError } from "./remote-service-effects";
@@ -1019,6 +1020,11 @@ export async function createApplicationServices({
     join(app.getPath("userData"), AGENT_DEFAULTS_PREFERENCE_FILE),
   );
   await runCauseEffect(agentDefaults.load());
+  // Closed until native ownership and private-window lifecycle adapters are installed.
+  const privatePlanningAdmission = new PrivatePlanningAdmission({
+    checkQuiescent: () => Effect.fail(new PrivatePlanningError({ code: "privacy_busy" })),
+    privateRenderersDestroyed: () => false,
+  });
   const store = new AgentStore(
     app.getPath("userData"),
     homedir(),
@@ -1705,6 +1711,7 @@ export async function createApplicationServices({
     screenCapture: hasSeparateAgentDisplay(process.platform)
       ? null
       : new ScreenCapturer({
+          admission: privatePlanningAdmission,
           platform: process.platform,
           screenAccess: () => systemPreferences.getMediaAccessStatus("screen"),
           displays: () => screen.getAllDisplays(),
