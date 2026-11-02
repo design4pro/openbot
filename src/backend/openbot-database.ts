@@ -22,6 +22,8 @@ import {
   HostedSiteEventLog,
   type PendingHostedSiteTerminalEvent,
 } from "./database/hosted-site-event-log";
+import { LocalPlanningDrafts } from "./database/local-planning-drafts";
+import { LocalPlanningRecords } from "./database/local-planning-records";
 import { LocalProfileIdentity } from "./database/local-profile-identity";
 import {
   MailboxProjection,
@@ -73,6 +75,8 @@ export class OpenBotDatabase {
   readonly #core: DatabaseCore;
   readonly usage: AgentUsage;
   readonly localIdentity: LocalProfileIdentity;
+  readonly localPlanningRecords: LocalPlanningRecords;
+  readonly localPlanningDrafts: LocalPlanningDrafts;
   readonly protectedFiles: ProtectedProfileFiles;
   readonly #conversations: ConversationQueries;
   readonly #roster: AgentRoster;
@@ -89,6 +93,8 @@ export class OpenBotDatabase {
     this.#core = new DatabaseCore({ userDataPath });
     this.usage = new AgentUsage(this.#core);
     this.localIdentity = new LocalProfileIdentity(this.#core);
+    this.localPlanningRecords = new LocalPlanningRecords(this.#core);
+    this.localPlanningDrafts = new LocalPlanningDrafts(this.#core);
     this.protectedFiles = new ProtectedProfileFiles(this.#core.path);
     this.#conversations = new ConversationQueries({ core: this.#core });
     this.#roster = new AgentRoster({ core: this.#core });
@@ -124,6 +130,15 @@ export class OpenBotDatabase {
     project: (db: DatabaseSync, sequences: number[]) => T,
   ): T {
     return this.#core.dispatch(commandId, events, project);
+  }
+
+  dispatchChecked<T>(
+    commandId: string,
+    events: OrchestrationEventInput[],
+    check: (db: DatabaseSync, replay: boolean) => void,
+    project: (db: DatabaseSync, sequences: number[]) => T,
+  ): T {
+    return this.#core.dispatchChecked(commandId, events, check, project);
   }
 
   commandResult(commandId: string): unknown | undefined {

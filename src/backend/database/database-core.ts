@@ -165,6 +165,30 @@ export class DatabaseCore {
     }
   }
 
+  /** Validates current authority and command integrity before a receipt can be replayed. */
+  dispatchChecked<T>(
+    commandId: string,
+    events: OrchestrationEventInput[],
+    check: (db: DatabaseSync, replay: boolean) => void,
+    project: (db: DatabaseSync, sequences: number[]) => T,
+  ): T {
+    const db = this.connection;
+    const ownsTransaction = !db.isTransaction;
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    try {
+      const replay = Boolean(
+        db.prepare("SELECT 1 FROM orchestration_command_receipts WHERE command_id=?").get(commandId),
+      );
+      check(db, replay);
+      const result = this.dispatch(commandId, events, project);
+      if (ownsTransaction) db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      if (ownsTransaction && db.isTransaction) db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   commandResult(commandId: string): unknown | undefined {
     const receipt = decodeReceiptRow(
       this.connection
