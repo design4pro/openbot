@@ -1,0 +1,75 @@
+// Drives local planning services on disposable profiles. No live provider or account is used.
+import { execFileSync, spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
+import { once } from "node:events";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { createOpenBotLogger } from "@openbot/logging";
+import { type PlanningReport, verifyPlanningReport } from "./project-planning/report";
+
+if (process.versions.bun) {
+  const child = spawn("node", ["--import", "tsx", import.meta.filename, ...process.argv.slice(2)], {
+    stdio: "inherit",
+  });
+  const [code] = await once(child, "exit");
+  process.exit(typeof code === "number" ? code : 1);
+}
+const logger = createOpenBotLogger("project-planning-e2e");
+const args = process.argv.slice(2);
+const root = resolve(import.meta.dirname, "..");
+if (args[0] === "--identity-worker" && args.length === 2) {
+  const { openIdentityProfile } = await import("./project-planning/identity");
+  const identity = await openIdentityProfile(args[1] ?? "");
+  // Machine-readable: private child-process result, synthetic profile identifiers only.
+  process.stdout.write(`${JSON.stringify(identity)}\n`);
+} else if (args[0] === "--verify-report" && args.length === 2) {
+  verifyPlanningReport(JSON.parse(await readFile(args[1] ?? "", "utf8")));
+  logger.info("Planning report verified.");
+} else if (args.length === 2 && args[0] === "--group" && args[1] === "identity") {
+  const runId = randomUUID();
+  const output = join(root, ".openbot-build", "project-planning", runId, "identity");
+  const fixture = join(output, "fixture");
+  await mkdir(fixture, { recursive: true, mode: 0o700 });
+  const sourceHashes: Record<string, string> = {};
+  for (const file of [
+    "scripts/project-planning-e2e.ts",
+    "scripts/project-planning/identity.ts",
+    "scripts/project-planning/report.ts",
+    "src/backend/database/local-profile-identity.ts",
+    "src/backend/local-planning/local-planning-schema.ts",
+    "src/backend/openbot-database-schema.ts",
+    "src/backend/database/database-core.ts",
+  ])
+    sourceHashes[file] = createHash("sha256")
+      .update(await readFile(join(root, file)))
+      .digest("hex");
+  const report: PlanningReport = {
+    schemaVersion: 1,
+    runId,
+    commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+    platform: `${process.platform}-${process.arch}`,
+    runtime: `Node ${process.version}`,
+    group: "identity",
+    basis: "service",
+    sourceHashes,
+    cases: [],
+    passed: false,
+    failure: null,
+  };
+  try {
+    const { identityCases } = await import("./project-planning/identity");
+    report.cases = await identityCases(fixture);
+    report.passed = true;
+    verifyPlanningReport(report);
+  } catch (error) {
+    report.failure = error instanceof Error ? error.name : "PlanningFailure";
+    process.exitCode = 1;
+  } finally {
+    await rm(fixture, { recursive: true, force: true });
+    const path = join(output, "report.json");
+    await writeFile(path, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+    logger.info("Planning evidence written.", { path, passed: report.passed, failure: report.failure });
+  }
+} else {
+  throw new Error("Use --group identity or --verify-report <path>.");
+}

@@ -22,6 +22,7 @@ import {
   HostedSiteEventLog,
   type PendingHostedSiteTerminalEvent,
 } from "./database/hosted-site-event-log";
+import { LocalProfileIdentity } from "./database/local-profile-identity";
 import {
   MailboxProjection,
   type MailboxProjectionChanges,
@@ -70,6 +71,7 @@ export type { StoredThreadSummary } from "./database/thread-summaries";
 export class OpenBotDatabase {
   readonly #core: DatabaseCore;
   readonly usage: AgentUsage;
+  readonly localIdentity: LocalProfileIdentity;
   readonly #conversations: ConversationQueries;
   readonly #roster: AgentRoster;
   readonly #conversationWrites: ConversationWriter;
@@ -84,6 +86,7 @@ export class OpenBotDatabase {
   constructor(readonly userDataPath: string) {
     this.#core = new DatabaseCore({ userDataPath });
     this.usage = new AgentUsage(this.#core);
+    this.localIdentity = new LocalProfileIdentity(this.#core);
     this.#conversations = new ConversationQueries({ core: this.#core });
     this.#roster = new AgentRoster({ core: this.#core });
     this.#conversationWrites = new ConversationWriter({ core: this.#core, roster: this.#roster });

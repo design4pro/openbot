@@ -67,9 +67,9 @@ export class DatabaseCore {
     const configured = yield* Effect.result(
       Effect.gen({ self: this }, function* () {
         yield* storedSync(() => {
+          db.exec("PRAGMA busy_timeout = 5000");
           db.exec("PRAGMA journal_mode = WAL");
           db.exec("PRAGMA foreign_keys = ON");
-          db.exec("PRAGMA busy_timeout = 5000");
           db.exec("PRAGMA synchronous = NORMAL");
           db.function(COLLAPSE_WHITESPACE_FUNCTION, { deterministic: true }, (value) =>
             typeof value === "string" ? value.replace(/\s+/gu, " ") : value,

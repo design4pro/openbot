@@ -85,6 +85,7 @@ function contents(db: DatabaseSync): Rows {
   const tables = db
     .prepare(
       `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'
+       AND name NOT GLOB 'local_*' AND name NOT GLOB 'projection_local_*'
        AND name <> 'schema_migrations' AND name NOT LIKE 'agent_memory_search%'
        AND name NOT IN ('projection_agent_tasks', 'projection_agent_threads') ORDER BY name`,
     )
@@ -133,7 +134,7 @@ describe("mailbox reconcile cleanup migration", () => {
       const before = contents(db);
       migrateOpenBotDatabase(db);
       expect(contents(db)).toEqual(withoutRepeats(before));
-      expect(db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 49 });
+      expect(db.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({ version: 50 });
       expect(db.prepare("SELECT name FROM sqlite_temp_master").all()).toEqual([]);
       expect(db.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
       expect(db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
@@ -160,9 +161,9 @@ describe("mailbox reconcile cleanup migration", () => {
     const db = databaseAt(38);
     seed(db);
     const before = contents(db);
-    db.exec("INSERT INTO schema_migrations VALUES(50,'now')");
+    db.exec("INSERT INTO schema_migrations VALUES(51,'now')");
     expect(() => migrateOpenBotDatabase(db)).toThrow("newer than this application supports");
-    db.exec("DELETE FROM schema_migrations WHERE version=50; DELETE FROM schema_migrations WHERE version=20");
+    db.exec("DELETE FROM schema_migrations WHERE version=51; DELETE FROM schema_migrations WHERE version=20");
     expect(() => migrateOpenBotDatabase(db)).toThrow("missing version 20");
     expect(contents(db)).toEqual(before);
   });

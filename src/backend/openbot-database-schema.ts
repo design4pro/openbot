@@ -15,6 +15,7 @@ import { AGENT_WAIT_SCHEMA_SQL } from "./agent-waits/agent-wait-schema";
 import { BROWSER_PROFILE_SCHEMA_SQL } from "./browser-profiles/browser-profile-schema";
 import { CHANNEL_SCHEMA_SQL, CHANNEL_SETTINGS_SCHEMA_SQL } from "./channel-schema";
 import { PROVIDER_HISTORY_SCHEMA_SQL } from "./database/provider-history-schema";
+import { initializeLocalProfile, LOCAL_PLANNING_SCHEMA_SQL } from "./local-planning/local-planning-schema";
 import { MCP_SERVERS_SCHEMA_SQL } from "./mcp-schema";
 import {
   MESSAGING_ALLOWED_ROLES_SCHEMA_SQL,
@@ -614,7 +615,8 @@ const LATEST_SCHEMA_SQL =
   BROWSER_PROFILE_SCHEMA_SQL +
   substituteOnce(WORKFLOW_SCHEMA_SQL, V46_WORKFLOW_RUN_SOURCE_SQL, V49_WORKFLOW_RUN_SOURCE_SQL) +
   AGENT_THREAD_SCHEMA_SQL +
-  WORKFLOW_GITHUB_SCHEMA_SQL;
+  WORKFLOW_GITHUB_SCHEMA_SQL +
+  LOCAL_PLANNING_SCHEMA_SQL;
 
 /** The end of the thread message table with the migration 40 columns before its PRIMARY KEY constraint. */
 function withThreadMessageOrderColumns(tableEnd: string): string {
@@ -898,6 +900,13 @@ const MIGRATIONS: readonly OpenBotMigration[] = [
     disableForeignKeys: true,
     up: addGitHubWorkflows,
   },
+  {
+    version: 50,
+    up: (db, appliedAt) => {
+      db.exec(LOCAL_PLANNING_SCHEMA_SQL);
+      initializeLocalProfile(db, appliedAt);
+    },
+  },
 ];
 
 const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? BASELINE_SCHEMA_VERSION;
@@ -1015,7 +1024,14 @@ function hasExistingSchema(db: DatabaseSync): boolean {
 function createLatestDatabase(db: DatabaseSync, appliedAt: string): void {
   db.exec("BEGIN IMMEDIATE");
   try {
+    // Another opener can create the profile while this connection waits for the writer lock.
+    if (hasExistingSchema(db)) {
+      db.exec("COMMIT");
+      migrateOpenBotDatabase(db, { appliedAt });
+      return;
+    }
     db.exec(LATEST_SCHEMA_SQL);
+    initializeLocalProfile(db, appliedAt);
     const insertMigration = db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)");
     for (const migration of MIGRATIONS) insertMigration.run(migration.version, appliedAt);
     assertForeignKeys(db, new Map());
@@ -1074,6 +1090,12 @@ function runMigration(
   if (migration.disableForeignKeys) db.exec("PRAGMA foreign_keys = OFF");
   try {
     db.exec("BEGIN IMMEDIATE");
+    // Re-read under the writer lock: migration selection happened before another writer committed.
+    if (db.prepare("SELECT 1 FROM schema_migrations WHERE version=?").get(migration.version)) {
+      const violations = readOldForeignKeyViolations(db);
+      db.exec("COMMIT");
+      return violations;
+    }
     migration.up(db, appliedAt);
     db.prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)").run(migration.version, appliedAt);
     const violations = assertForeignKeys(db, violationsBefore);
