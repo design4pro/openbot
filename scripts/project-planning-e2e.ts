@@ -28,7 +28,11 @@ if (args[0] === "--identity-worker" && args.length === 2) {
 } else if (
   args.length === 2 &&
   args[0] === "--group" &&
-  (args[1] === "identity" || args[1] === "files-service" || args[1] === "admission" || args[1] === "domain")
+  (args[1] === "identity" ||
+    args[1] === "files-service" ||
+    args[1] === "admission" ||
+    args[1] === "domain" ||
+    args[1] === "reviews")
 ) {
   const group = args[1];
   const runId = randomUUID();
@@ -63,7 +67,7 @@ if (args[0] === "--identity-worker" && args.length === 2) {
       "src/backend/agent/screen-capture.ts",
       "src/backend/agent/openbot-tool-router.ts",
     );
-  if (group === "domain")
+  if (group === "domain" || group === "reviews")
     sourceFiles.push(
       "scripts/project-planning/domain.ts",
       "scripts/project-planning/domain-worker.ts",
@@ -76,6 +80,8 @@ if (args[0] === "--identity-worker" && args.length === 2) {
       "src/backend/database/local-planning-records.ts",
       "src/backend/database/local-planning-drafts.ts",
     );
+  if (group === "reviews")
+    sourceFiles.push("scripts/project-planning/reviews.ts", "src/backend/local-planning/local-planning-reviews.ts");
   for (const file of sourceFiles)
     sourceHashes[file] = createHash("sha256")
       .update(await readFile(join(root, file)))
@@ -102,7 +108,9 @@ if (args[0] === "--identity-worker" && args.length === 2) {
           ? await (await import("./project-planning/files")).fileServiceCases(fixture)
           : group === "admission"
             ? await (await import("./project-planning/admission")).admissionCases()
-            : await (await import("./project-planning/domain")).domainCases(fixture);
+            : group === "domain"
+              ? await (await import("./project-planning/domain")).domainCases(fixture)
+              : await (await import("./project-planning/reviews")).reviewCases(fixture);
     report.passed = true;
     verifyPlanningReport(report);
   } catch (error) {

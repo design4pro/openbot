@@ -7,7 +7,7 @@ export const planningReportSchema = z.strictObject({
   commit: z.string().regex(/^[a-f0-9]{40}$/),
   platform: z.string(),
   runtime: z.string(),
-  group: z.enum(["identity", "files-service", "admission", "domain"]),
+  group: z.enum(["identity", "files-service", "admission", "domain", "reviews"]),
   basis: z.literal("service"),
   sourceHashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
   cases: z.array(z.string()),
@@ -39,6 +39,14 @@ export function verifyPlanningReport(value: unknown): PlanningReport {
       "file-stream-refusal",
       "missing-file-metadata",
       "transfer-collision",
+    ],
+    reviews: [
+      "review-submission",
+      "review-decision",
+      "criteria-superseded",
+      "stale-review-decision",
+      "archived-review-refusal",
+      "review-history-reopen",
     ],
     domain: [
       "command-replay",

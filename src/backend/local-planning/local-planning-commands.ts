@@ -6,6 +6,7 @@ import type { LocalPlanningDrafts } from "../database/local-planning-drafts";
 import type { LocalPlanningRecords } from "../database/local-planning-records";
 import type { LocalPlanningAuthority, LocalPlanningContext, LocalPlanningOwner } from "./local-planning-authority";
 import { planningFailure } from "./local-planning-errors";
+import { applyLocalPlanningReview } from "./local-planning-reviews";
 import type { LocalPlanningAction, LocalPlanningCommand } from "./local-planning-schemas";
 
 /** Fixed tuples keep object-key order out of command identity. Optional fields use null. */
@@ -205,7 +206,7 @@ export class LocalPlanningCommands {
       (db, sequences) => {
         const sequence = sequences[0];
         if (sequence === undefined) planningFailure("storage_failed");
-        const result = this.#apply(db, owner, action, objectId, sequence, now);
+        const result = this.#apply(db, owner, action, objectId, sequence, now, commandId);
         if (command.consumedDraft) drafts.discard(db, owner, command.consumedDraft.id, command.consumedDraft.revision);
         db.prepare(
           "INSERT INTO local_project_command_keys(principal_id,local_scope_id,operation_id,command_id,fingerprint,aggregate_type,aggregate_id) VALUES(?,?,?,?,?,?,?)",
@@ -306,6 +307,7 @@ export class LocalPlanningCommands {
     objectId: string,
     sequence: number,
     now: string,
+    commandId: string,
   ): PlanningCommandResult {
     if (action.kind === "save_draft") {
       const saved = this.#options.drafts.save(
@@ -352,6 +354,7 @@ export class LocalPlanningCommands {
       case "edit_milestone": {
         const old = this.#options.records.milestone(owner, projectId, action.milestoneId);
         const changed = old.criteria !== action.criteria;
+        if (changed && old.criteriaRevision === Number.MAX_SAFE_INTEGER) planningFailure("limit_reached");
         db.prepare(
           "UPDATE projection_local_project_milestones SET title=?,criteria=?,criteria_revision=?,revision=?,gate_state=?,current_review_id=?,updated_at=?,last_event_sequence=? WHERE milestone_id=? AND project_id=?",
         ).run(
@@ -403,7 +406,7 @@ export class LocalPlanningCommands {
         break;
       case "submit_review":
       case "decide_review":
-        planningFailure("unavailable");
+        return applyLocalPlanningReview(db, this.#options.records, owner, action, objectId, sequence, now, commandId);
     }
     db.prepare(
       "UPDATE projection_local_projects SET revision=?,updated_at=?,last_event_sequence=? WHERE project_id=?",
