@@ -7,7 +7,7 @@ export const planningReportSchema = z.strictObject({
   commit: z.string().regex(/^[a-f0-9]{40}$/),
   platform: z.string(),
   runtime: z.string(),
-  group: z.literal("identity"),
+  group: z.enum(["identity", "files-service"]),
   basis: z.literal("service"),
   sourceHashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
   cases: z.array(z.string()),
@@ -21,14 +21,21 @@ export function verifyPlanningReport(value: unknown): PlanningReport {
   assert.equal(report.passed, true, "Planning report did not pass");
   assert.equal(report.failure, null, "Planning report has a failure");
   assert.equal(new Set(report.cases).size, report.cases.length, "Duplicate planning cases");
-  for (const id of [
-    "identity-reopen",
-    "identity-copy",
-    "identity-new-profile",
-    "identity-concurrent",
-    "identity-corruption",
-  ])
-    assert.ok(report.cases.includes(id), `Missing planning case: ${id}`);
+  const required =
+    report.group === "identity"
+      ? ["identity-reopen", "identity-copy", "identity-new-profile", "identity-concurrent", "identity-corruption"]
+      : [
+          "protected-profile-paths",
+          "protected-file-alias",
+          "ordinary-file-control",
+          "overlap-workspace-list",
+          "replacement-guard",
+          "protected-staging",
+          "file-stream-refusal",
+          "missing-file-metadata",
+          "transfer-collision",
+        ];
+  for (const id of required) assert.ok(report.cases.includes(id), `Missing planning case: ${id}`);
   assert.ok(Object.keys(report.sourceHashes).length > 0, "Missing source hashes");
   return report;
 }

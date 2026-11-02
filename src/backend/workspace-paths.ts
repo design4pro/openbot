@@ -10,8 +10,9 @@ import {
 } from "@openbot/contracts/ipc";
 import { legacyAgentId } from "@openbot/contracts/validation";
 import { sourceText } from "@openbot/i18n/source";
-import { Effect } from "effect";
+import { Effect, Result } from "effect";
 import { type AttachmentOperationError, attachmentCall, attachmentFailure } from "./attachment-effects";
+import type { ProtectedProfileFiles } from "./protected-profile-files";
 import { isRecord } from "./protocol";
 
 export interface ResolvedSharedFile {
@@ -111,6 +112,7 @@ export const resolveSharedFile = Effect.fn("Workspace.resolveSharedFile")(functi
   sharedRootPath: string,
   inputPath: string,
   options: { allowDirectory?: boolean } = {},
+  protectedFiles?: ProtectedProfileFiles,
 ): Effect.fn.Return<ResolvedSharedFile, AttachmentOperationError> {
   const sharedRoot = yield* attachmentCall(() => realpath(sharedRootPath));
   const candidatePath = sharedPathFromInput(sharedRootPath, inputPath);
@@ -119,6 +121,8 @@ export const resolveSharedFile = Effect.fn("Workspace.resolveSharedFile")(functi
     return yield* attachmentFailure(new Error(sourceText("error.backend.sharedFileOutside")));
   }
   const metadata = yield* attachmentCall(() => stat(resolvedPath));
+  if (protectedFiles)
+    yield* protectedFiles.assertOpenedFileAllowed(resolvedPath, metadata).pipe(Effect.mapError(attachmentFailure));
   // Agents link the folders they make. Only reveal accepts one, so a folder is never opened or read.
   if (metadata.isDirectory() && !options.allowDirectory) {
     return yield* attachmentFailure(new Error(sourceText("error.backend.sharedPathIsFolder")));
@@ -217,9 +221,12 @@ export const resolveWorkspaceFile = Effect.fn("Workspace.resolveWorkspaceFile")(
   agent: Pick<AgentSummary, "id" | "workspacePath">,
   inputPath: string,
   options: { allowOutside?: boolean; fileHistory?: readonly string[] } = {},
+  protectedFiles?: ProtectedProfileFiles,
 ): Effect.fn.Return<ResolvedWorkspaceFile, AttachmentOperationError> {
   const { resolvedPath, insideWorkspace, metadata } = yield* resolveWorkspacePath(agent, inputPath, options);
   if (!metadata.isFile()) return yield* refuse("not-file", sourceText("error.backend.workspacePathNotFile"));
+  if (protectedFiles)
+    yield* protectedFiles.assertOpenedFileAllowed(resolvedPath, metadata).pipe(Effect.mapError(attachmentFailure));
   return { path: resolvedPath, name: basename(resolvedPath), size: metadata.size, insideWorkspace };
 });
 
@@ -233,6 +240,7 @@ export const listWorkspaceDirectory = Effect.fn("Workspace.listWorkspaceDirector
   agent: Pick<AgentSummary, "id" | "workspacePath">,
   inputPath: string,
   options: { allowOutside?: boolean } = {},
+  protectedFiles?: ProtectedProfileFiles,
 ): Effect.fn.Return<WorkspaceDirectory, AttachmentOperationError> {
   const { workspaceRoot, resolvedPath, insideWorkspace, metadata } = yield* resolveWorkspacePath(agent, inputPath, {
     ...options,
@@ -254,6 +262,10 @@ export const listWorkspaceDirectory = Effect.fn("Workspace.listWorkspaceDirector
     // `workspacePathFromInput` reads `\` as a separator, so such a name would open a different file.
     if (dirent.name.includes("\\")) continue;
     const entryPath = join(resolvedPath, dirent.name);
+    if (protectedFiles) {
+      const allowed = yield* Effect.result(protectedFiles.assertPathAllowed(entryPath));
+      if (Result.isFailure(allowed)) continue;
+    }
     if (dirent.isDirectory() || dirent.isFile()) {
       candidates.push({ name: dirent.name, target: entryPath, kind: dirent.isDirectory() ? "directory" : "file" });
       continue;

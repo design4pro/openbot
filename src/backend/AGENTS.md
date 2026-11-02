@@ -41,6 +41,12 @@ The account service has a second, unrelated database — Cloudflare D1 — and i
 shape: those migrations are reversible but race a deploy. `apps/auth-api/AGENTS.md` owns it — nothing in this
 directory touches `apps/auth-api/migrations/`.
 
+## Safe scripted edits
+
+When a scripted change edits several files, read each target inside its own edit function and assert
+unique anchors. Do not reuse the text buffer from a previous file. Check the changed-file diff before
+running checks or committing.
+
 ## Size
 
 `mailbox-store.ts` owns mailbox state and database writes. `attachment-files.ts` owns draft and

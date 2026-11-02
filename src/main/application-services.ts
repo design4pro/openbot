@@ -2085,6 +2085,7 @@ export async function createApplicationServices({
   });
   const userData = app.getPath("userData");
   const storageSources = {
+    protectedFiles: store.database.protectedFiles,
     roots: {
       database: store.database.path,
       downloads: store.downloadsRoot,
@@ -2331,6 +2332,7 @@ export async function createApplicationServices({
   );
   // The same owners the Settings screens write through, so an import has their checks and restarts.
   const instanceTransfer = new InstanceTransferService({
+    protectedFiles: store.database.protectedFiles,
     agents: service,
     skills: { library: () => skills.requireLocalLibrary(), installLocal: (input) => skills.installLocal(input) },
     sharedRoot: store.sharedRoot,

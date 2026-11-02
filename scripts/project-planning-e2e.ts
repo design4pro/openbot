@@ -25,13 +25,14 @@ if (args[0] === "--identity-worker" && args.length === 2) {
 } else if (args[0] === "--verify-report" && args.length === 2) {
   verifyPlanningReport(JSON.parse(await readFile(args[1] ?? "", "utf8")));
   logger.info("Planning report verified.");
-} else if (args.length === 2 && args[0] === "--group" && args[1] === "identity") {
+} else if (args.length === 2 && args[0] === "--group" && (args[1] === "identity" || args[1] === "files-service")) {
+  const group = args[1];
   const runId = randomUUID();
-  const output = join(root, ".openbot-build", "project-planning", runId, "identity");
+  const output = join(root, ".openbot-build", "project-planning", runId, group);
   const fixture = join(output, "fixture");
   await mkdir(fixture, { recursive: true, mode: 0o700 });
   const sourceHashes: Record<string, string> = {};
-  for (const file of [
+  const sourceFiles = [
     "scripts/project-planning-e2e.ts",
     "scripts/project-planning/identity.ts",
     "scripts/project-planning/report.ts",
@@ -39,7 +40,18 @@ if (args[0] === "--identity-worker" && args.length === 2) {
     "src/backend/local-planning/local-planning-schema.ts",
     "src/backend/openbot-database-schema.ts",
     "src/backend/database/database-core.ts",
-  ])
+    "src/backend/openbot-database.ts",
+  ];
+  if (group === "files-service")
+    sourceFiles.push(
+      "scripts/project-planning/files.ts",
+      "src/backend/protected-profile-files.ts",
+      "src/backend/agent/attachment-gateway.ts",
+      "src/backend/attachment-files.ts",
+      "src/backend/workspace-paths.ts",
+      "src/main/team-api/route-files.ts",
+    );
+  for (const file of sourceFiles)
     sourceHashes[file] = createHash("sha256")
       .update(await readFile(join(root, file)))
       .digest("hex");
@@ -49,7 +61,7 @@ if (args[0] === "--identity-worker" && args.length === 2) {
     commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
     platform: `${process.platform}-${process.arch}`,
     runtime: `Node ${process.version}`,
-    group: "identity",
+    group,
     basis: "service",
     sourceHashes,
     cases: [],
@@ -58,7 +70,10 @@ if (args[0] === "--identity-worker" && args.length === 2) {
   };
   try {
     const { identityCases } = await import("./project-planning/identity");
-    report.cases = await identityCases(fixture);
+    report.cases =
+      group === "identity"
+        ? await identityCases(fixture)
+        : await (await import("./project-planning/files")).fileServiceCases(fixture);
     report.passed = true;
     verifyPlanningReport(report);
   } catch (error) {
@@ -71,5 +86,5 @@ if (args[0] === "--identity-worker" && args.length === 2) {
     logger.info("Planning evidence written.", { path, passed: report.passed, failure: report.failure });
   }
 } else {
-  throw new Error("Use --group identity or --verify-report <path>.");
+  throw new Error("Use --group identity|files-service or --verify-report <path>.");
 }

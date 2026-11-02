@@ -45,7 +45,7 @@ export async function routeInstanceTransfer(
       }
       const path = await answer(() => runCauseEffect(instanceTransfer.exportForMember(input)), 400);
       try {
-        return await sendFile(response, path, null, (size) => ({
+        return await sendFile(instanceTransfer.protectedFiles, response, path, null, (size) => ({
           "Content-Type": "application/zip",
           "Content-Length": String(size),
           "Content-Disposition": "attachment; filename*=UTF-8''openbot-transfer.zip",

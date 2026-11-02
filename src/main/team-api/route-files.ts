@@ -24,6 +24,7 @@ import { TEAM_API_ROUTES } from "@openbot/contracts/team-api-routes";
 import { sourceText } from "@openbot/i18n/source";
 import { Deferred, Effect } from "effect";
 import { runCauseEffect } from "../../backend/effect-boundary";
+import type { ProtectedProfileFiles } from "../../backend/protected-profile-files";
 import { remoteCall } from "../remote-service-effects";
 import type { TeamApiAgents, TeamApiMailbox } from "./dependencies";
 import { HttpError } from "./http-error";
@@ -80,7 +81,11 @@ const attachmentUploads = new UploadSlots(ATTACHMENT_UPLOAD_SLOTS);
 export interface FileRouteDependencies {
   agents: Pick<
     TeamApiAgents,
-    "prepareImportedAttachments" | "discardDraftAttachment" | "resolveSharedFile" | "resolveWorkspaceFile"
+    | "prepareImportedAttachments"
+    | "discardDraftAttachment"
+    | "resolveSharedFile"
+    | "resolveWorkspaceFile"
+    | "protectedFiles"
   >;
   mailbox: TeamApiMailbox;
 }
@@ -121,7 +126,7 @@ export async function routeFiles(
     if (method === "GET") {
       const attachment = await runCauseEffect(mailbox.resolveAttachment(attachmentId));
       if (!attachment) throw new HttpError(404, sourceText("error.team.attachmentNotFound"));
-      return sendFile(response, attachment.path, null, (size) => ({
+      return sendFile(agents.protectedFiles, response, attachment.path, null, (size) => ({
         "Content-Type": attachment.mimeType || "application/octet-stream",
         "Content-Length": String(size),
         "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(basename(attachment.path))}`,
@@ -137,12 +142,18 @@ export async function routeFiles(
     if (sharedFile.size > ATTACHMENT_LIMITS.fileBytes) {
       throw new HttpError(413, sourceText("error.team.sharedFileTooLarge"));
     }
-    return sendFile(response, sharedFile.path, sourceText("error.team.sharedFileTooLarge"), (size) => ({
-      "Content-Type": "application/octet-stream",
-      "Content-Length": String(size),
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(sharedFile.name)}`,
-      "X-Content-Type-Options": "nosniff",
-    }));
+    return sendFile(
+      agents.protectedFiles,
+      response,
+      sharedFile.path,
+      sourceText("error.team.sharedFileTooLarge"),
+      (size) => ({
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(size),
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(sharedFile.name)}`,
+        "X-Content-Type-Options": "nosniff",
+      }),
+    );
   }
   if (method === "GET" && url.pathname === TEAM_API_ROUTES.workspaceFiles) {
     // The released URL spells this `botId`; only the local name follows the rename.
@@ -160,12 +171,18 @@ export async function routeFiles(
     if (workspaceFile.size > ATTACHMENT_LIMITS.fileBytes) {
       throw new HttpError(413, sourceText("error.team.workspaceFileTooLarge"));
     }
-    return sendFile(response, workspaceFile.path, sourceText("error.team.workspaceFileTooLarge"), (size) => ({
-      "Content-Type": "application/octet-stream",
-      "Content-Length": String(size),
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(workspaceFile.name)}`,
-      "X-Content-Type-Options": "nosniff",
-    }));
+    return sendFile(
+      agents.protectedFiles,
+      response,
+      workspaceFile.path,
+      sourceText("error.team.workspaceFileTooLarge"),
+      (size) => ({
+        "Content-Type": "application/octet-stream",
+        "Content-Length": String(size),
+        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(workspaceFile.name)}`,
+        "X-Content-Type-Options": "nosniff",
+      }),
+    );
   }
 
   return "unmatched";
@@ -180,6 +197,7 @@ export async function routeFiles(
  * thing left to do is to close the socket: a client that closes the download is not an error.
  */
 export async function sendFile(
+  protectedFiles: ProtectedProfileFiles,
   response: ServerResponse,
   path: string,
   tooLarge: string | null,
@@ -190,6 +208,9 @@ export async function sendFile(
   let head: OutgoingHttpHeaders;
   try {
     const metadata = await file.stat();
+    const allowed = await Effect.runPromise(Effect.result(protectedFiles.assertOpenedFileAllowed(path, metadata)));
+    if (allowed._tag === "Failure") throw new HttpError(404, sourceText("error.storage.protectedFile"));
+
     if (!metadata.isFile()) throw new Error("The requested path is not a file.");
     if (tooLarge !== null && metadata.size > ATTACHMENT_LIMITS.fileBytes) throw new HttpError(413, tooLarge);
     size = metadata.size;

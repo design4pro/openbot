@@ -1000,6 +1000,7 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
       },
     });
     this.#attachments = new AttachmentGateway({
+      protectedFiles: store.database.protectedFiles,
       conversation: this.#conversation,
       mailbox,
       sharedRoot: store.sharedRoot,
@@ -1597,6 +1598,10 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
   }
 
   /** The folder that every local agent can change, beside its own workspace. */
+  get protectedFiles() {
+    return this.#store.database.protectedFiles;
+  }
+
   get sharedRoot(): string {
     return this.#store.sharedRoot;
   }
@@ -3387,7 +3392,7 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
     inputPath: string,
     options?: { allowDirectory?: boolean },
   ): Effect.Effect<ResolvedSharedFile, AgentLifecycleFailed> {
-    return resolveSharedFile(this.#store.sharedRoot, inputPath, options).pipe(
+    return resolveSharedFile(this.#store.sharedRoot, inputPath, options, this.protectedFiles).pipe(
       Effect.mapError((failure) => new AgentLifecycleFailed({ operation: "resolveSharedFile", cause: failure.cause })),
     );
   }
@@ -3399,7 +3404,7 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
     inputPath: string,
   ) {
     const agent = yield* lifecycleStep("find workspace agent", () => this.#agentForFile(agentId));
-    return yield* resolveWorkspaceFile(agent, inputPath).pipe(
+    return yield* resolveWorkspaceFile(agent, inputPath, {}, this.protectedFiles).pipe(
       Effect.mapError(
         (failure) => new AgentLifecycleFailed({ operation: "resolve workspace file", cause: failure.cause }),
       ),
@@ -3413,10 +3418,15 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
     inputPath: string,
   ) {
     const agent = yield* lifecycleStep("find workspace agent", () => this.#agentForFile(agentId));
-    return yield* resolveWorkspaceFile(agent, inputPath, {
-      allowOutside: !workspaceAccessEnforced(agent),
-      fileHistory: this.#turn.fileHistory.paths(agent.id, agent.threadId),
-    }).pipe(
+    return yield* resolveWorkspaceFile(
+      agent,
+      inputPath,
+      {
+        allowOutside: !workspaceAccessEnforced(agent),
+        fileHistory: this.#turn.fileHistory.paths(agent.id, agent.threadId),
+      },
+      this.protectedFiles,
+    ).pipe(
       Effect.mapError(
         (failure) => new AgentLifecycleFailed({ operation: "resolve local workspace file", cause: failure.cause }),
       ),
@@ -3430,7 +3440,7 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
     inputPath: string,
   ) {
     const agent = yield* lifecycleStep("find workspace agent", () => this.#agentForFile(agentId));
-    return yield* listWorkspaceDirectory(agent, inputPath).pipe(
+    return yield* listWorkspaceDirectory(agent, inputPath, {}, this.protectedFiles).pipe(
       Effect.mapError(
         (failure) => new AgentLifecycleFailed({ operation: "list workspace directory", cause: failure.cause }),
       ),
@@ -3444,7 +3454,12 @@ export class AgentService extends EventEmitter<AgentServiceEvents> {
     inputPath: string,
   ) {
     const agent = yield* lifecycleStep("find workspace agent", () => this.#agentForFile(agentId));
-    return yield* listWorkspaceDirectory(agent, inputPath, { allowOutside: !workspaceAccessEnforced(agent) }).pipe(
+    return yield* listWorkspaceDirectory(
+      agent,
+      inputPath,
+      { allowOutside: !workspaceAccessEnforced(agent) },
+      this.protectedFiles,
+    ).pipe(
       Effect.mapError(
         (failure) => new AgentLifecycleFailed({ operation: "list local workspace directory", cause: failure.cause }),
       ),
