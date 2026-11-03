@@ -5,7 +5,6 @@ export const messages = {
   "preview.panel.label": "Просмотр файла",
   "preview.panel.resize": "Изменить размер просмотра файла",
   "preview.panel.copy": "Копировать текст файла",
-  "preview.panel.openExternally": "Открыть файл во внешней программе",
   "preview.panel.download": "Скачать файл",
   "preview.panel.reveal": "Показать файл в Finder",
   "preview.panel.close": "Закрыть просмотр файла",
@@ -19,7 +18,6 @@ export const messages = {
   "preview.unavailable": "Просмотр недоступен.",
   "preview.unsupported.title": "Просмотр недоступен",
   "preview.unsupported.description": "Файл этого типа можно открыть в программе по умолчанию.",
-  "preview.unsupported.openExternally": "Открыть в программе",
   "preview.spreadsheet.readFailed": "Не удалось прочитать эту таблицу.",
   "preview.spreadsheet.truncated": "Просмотр ограничен первыми {rows} строками и {columns} столбцами.",
 } as const satisfies PartialTranslation<typeof source>;

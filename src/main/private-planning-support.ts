@@ -8,7 +8,8 @@ import type { RemoteDesktopRuntimePaths } from "./remote-desktop-runtime-artifac
 interface TestedNativeConfiguration {
   platform: "linux";
   architecture: string;
-  osMajor: string;
+  distribution: "ubuntu";
+  osRelease: "24.04";
   kernelRelease: string;
   displayBackend: "x11-xvfb";
   driverDigest: string;
@@ -19,7 +20,8 @@ const TESTED_NATIVE_CONFIGURATIONS: readonly TestedNativeConfiguration[] = [
   {
     platform: "linux",
     architecture: "x64",
-    osMajor: "24",
+    distribution: "ubuntu",
+    osRelease: "24.04",
     kernelRelease: "7.2.12-orbstack-00394-gbecdd6130068",
     displayBackend: "x11-xvfb",
     driverDigest: "5fa60c7ab35194e0e050a337521ca0e0b0ae0a8fe898813b340f65c94e15264c",
@@ -46,7 +48,8 @@ export const privatePlanningSupported = Effect.fn("PrivatePlanningSupport.availa
   return yield* Effect.tryPromise({
     try: async (signal) => {
       const os = await readFile("/etc/os-release", "utf8");
-      const osMajor = /^VERSION_ID="(\d+)/mu.exec(os)?.[1];
+      const distribution = /^ID=(?:"([^"\n]+)"|([^\s"\n]+))$/mu.exec(os);
+      const osRelease = /^VERSION_ID=(?:"([^"\n]+)"|([^\s"\n]+))$/mu.exec(os);
       const display = process.env.DISPLAY;
       if (
         !display ||
@@ -72,7 +75,8 @@ export const privatePlanningSupported = Effect.fn("PrivatePlanningSupport.availa
       const moonlightStreamer = await binaryDigest(remote.moonlightStreamer, signal);
       return candidates.some(
         (target) =>
-          target.osMajor === osMajor &&
+          target.distribution === (distribution?.[1] ?? distribution?.[2]) &&
+          target.osRelease === (osRelease?.[1] ?? osRelease?.[2]) &&
           target.driverDigest === driverDigest &&
           target.remoteDigests.sunshine === sunshine &&
           target.remoteDigests.moonlightWebServer === moonlightWebServer &&

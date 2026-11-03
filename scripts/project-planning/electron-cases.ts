@@ -28,7 +28,9 @@ export async function exposePrivate(
     | "hostGateway"
     | "hostGatewayOptions"
     | "clientTransport"
-    | "clientOptions",
+    | "clientOptions"
+    | "apiServer"
+    | "receivingServer",
 ): Promise<void> {
   const object = objectReference.parse(await main.send("Runtime.evaluate", { expression })).result.objectId;
   const property = properties
@@ -39,6 +41,14 @@ export async function exposePrivate(
     objectId: property.value.objectId,
     functionDeclaration: `function(){globalThis.__planningFixture.${slot}=this;}`,
   });
+}
+export async function installSyntheticRemoteCipher(main: InspectorClient): Promise<void> {
+  await exposePrivate(main, "__planningFixture.services.remoteServers", "#store", "remoteStore");
+  await exposePrivate(main, "__planningFixture.remoteStore", "#cipher", "remoteCipher");
+  // Synthetic session tokens only. The fixture makes no claim about a system keyring.
+  await main.evaluate(
+    "Object.assign(__planningFixture.remoteCipher,{encrypt:value=>Buffer.from(value),decrypt:value=>value.toString()}) && true",
+  );
 }
 async function enter(page: Page): Promise<PlanningSession> {
   return unwrap(await page.evaluate(() => window.openbot.localPlanning.enter()));
@@ -126,12 +136,7 @@ export async function electronPlanningCases(
     f.restoreDiagnostics=()=>{f.options.supported=supported;f.options.isLocal=local;fs.readFile=read;node.syncBuiltinESMExports();};return true;
   })()`);
 
-  await exposePrivate(main, "__planningFixture.services.remoteServers", "#store", "remoteStore");
-  await exposePrivate(main, "__planningFixture.remoteStore", "#cipher", "remoteCipher");
-  // Synthetic session tokens only. The fixture makes no claim about a system keyring.
-  await main.evaluate(
-    "Object.assign(__planningFixture.remoteCipher,{encrypt:value=>Buffer.from(value),decrypt:value=>value.toString()}) && true",
-  );
+  await installSyntheticRemoteCipher(main);
   await signIn(main, first, "a@example.test");
   let session = await enter(first);
   assert.equal(session.localScopeId, initial.localScopeId);

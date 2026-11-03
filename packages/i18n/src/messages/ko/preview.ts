@@ -5,7 +5,6 @@ export const messages = {
   "preview.panel.label": "파일 미리 보기",
   "preview.panel.resize": "파일 미리 보기 크기 조절",
   "preview.panel.copy": "파일 텍스트 복사",
-  "preview.panel.openExternally": "외부 앱에서 파일 열기",
   "preview.panel.download": "파일 다운로드",
   "preview.panel.reveal": "Finder에서 파일 보기",
   "preview.panel.close": "파일 미리 보기 닫기",
@@ -19,7 +18,6 @@ export const messages = {
   "preview.unavailable": "미리 볼 수 없어요.",
   "preview.unsupported.title": "미리 볼 수 없음",
   "preview.unsupported.description": "이 파일 형식은 기본 앱에서 열 수 있어요.",
-  "preview.unsupported.openExternally": "외부 앱에서 열기",
   "preview.spreadsheet.readFailed": "이 스프레드시트를 읽을 수 없어요.",
   "preview.spreadsheet.truncated": "처음 {rows}행, {columns}열까지만 미리 볼 수 있어요.",
 } as const satisfies PartialTranslation<typeof source>;

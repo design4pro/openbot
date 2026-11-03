@@ -836,6 +836,7 @@ function registerIpcHandlers({
       translate: language.translate,
     }),
     ...storageIpcHandlers({
+      protectedFiles: service.protectedFiles,
       storage: storageUsage,
       machine: machineAlerts,
       providerRuntimes,

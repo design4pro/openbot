@@ -67,7 +67,11 @@ on the same opened source handle before bytes or response headers leave the adap
 workspace/shared/additional-folder reads, managed attachment/avatar/logo protocols, staging,
 attachment ingestion, browser uploads, instance transfer, and maintenance backup copies. Ordinary
 files and ordinary symbolic links retain their behavior. Metadata-only validation cannot authorize a
-later open after a path replacement.
+later open after a path replacement. Local preview/save/archive and remote picker/native path imports
+apply this check at the final reader. External opening uses a unique owner-only checked copy in
+`local-open-copies`; the UI names the action Open copy and explains that edits do not update the
+original. Successful copies remain for the external program's unknown lifetime. Explicit Reveal
+retains its original-path behavior.
 
 Planning records do not enter channel history, summaries, memories, search, agent context, shared
 events, normal exports, or diagnostics. Aggregate disk size can include the database. Existing Team

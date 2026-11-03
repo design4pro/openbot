@@ -12,6 +12,7 @@ import { assertMutationAllowed, connectToDevApp } from "./dev-automation/cdp-cli
 import { InspectorClient } from "./dev-automation/inspector-client";
 import { readDevInstanceRecords } from "./dev-automation/instance-registry";
 import { mainTarget, readApplicationRuntime } from "./project-planning/app-fixture";
+import { platformRefusalCases } from "./project-planning/app-platform";
 import { electronPlanningCases, electronWindowLifecycleCase } from "./project-planning/electron-cases";
 import { type ApplicationRuntime, verifyPlanningEvidence } from "./project-planning/report";
 
@@ -97,7 +98,12 @@ for (const path of [
   "src/preload/local-planning-decoding.ts",
   "src/main/private-planning-support.ts",
   "scripts/project-planning/app-fixture.ts",
+  "scripts/project-planning/app-platform.ts",
   "scripts/project-planning/app-files.ts",
+  "scripts/project-planning/app-attachment-upload.ts",
+  "scripts/project-planning/app-attachment-reads.ts",
+  "src/main/ipc/attachment-handlers.ts",
+  "src/main/file-preview.ts",
   "scripts/project-planning/app-file-races.ts",
   "src/main/file-response.ts",
   "src/main/session-configuration.ts",
@@ -240,6 +246,9 @@ try {
   cases.push("electron-sandbox");
   if (process.argv.includes("--case=bootstrap")) {
     report.basis = "electron-bootstrap";
+  } else if (process.argv.includes("--case=platform")) {
+    report.basis = "electron-platform";
+    await platformRefusalCases(main, page, (id) => cases.push(id));
   } else if (process.argv.includes("--case=unsupported")) {
     report.basis = "electron-unsupported";
     assert.equal(unwrap(await page.evaluate(() => window.openbot.localPlanning.availability())).reason, "unavailable");
@@ -268,6 +277,7 @@ try {
       logger.info("Remote case passed.", { id });
     });
   } else {
+    await platformRefusalCases(main, page, (id) => cases.push(id));
     await main.evaluate("require('effect').Effect.runPromise(__planningFixture.services.cuaDriver.state())");
     const initial = unwrap(await page.evaluate(() => window.openbot.localPlanning.availability()));
     assert.notEqual(

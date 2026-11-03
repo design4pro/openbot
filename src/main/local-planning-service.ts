@@ -105,24 +105,38 @@ export class LocalPlanningMainService {
     if (this.#exit?.closing) return yield* fail("invalid_transition");
     this.#abortExit();
     const generation = this.#generation;
-    yield* this.#options.admission.enterPrivate().pipe(Effect.mapError(() => fail("privacy_busy")));
-    yield* this.#sender(event);
-    if (generation !== this.#generation || !this.#options.isLocal()) return yield* fail("stale_scope");
     const existing = this.#sessions.get(contents);
     const context =
       existing?.context ?? (yield* Effect.try({ try: () => this.#options.authority.issue(), catch: boundaryFailure }));
-    const owner = yield* Effect.try({ try: () => this.#options.authority.resolve(context), catch: boundaryFailure });
-    const privateEpoch = this.#privateEpoch ?? randomUUID();
-    const session: PlanningSession = {
-      generation,
-      privateEpoch,
-      localScopeId: owner.localScopeId,
-      windowDraftId: context.windowDraftId,
-    };
-    yield* Effect.try({ try: () => this.#options.windows.enroll(contents, privateEpoch), catch: boundaryFailure });
-    this.#privateEpoch = privateEpoch;
-    this.#sessions.set(contents, { contents, context, session, readable: true });
-    return session;
+    yield* Effect.try({ try: () => this.#options.authority.resolve(context), catch: boundaryFailure });
+    const startedPublic = this.#options.admission.snapshot().phase === "public";
+    let enrolled = false;
+    return yield* Effect.gen({ self: this }, function* () {
+      yield* this.#options.admission.enterPrivate().pipe(Effect.mapError(() => fail("privacy_busy")));
+      yield* this.#sender(event);
+      if (generation !== this.#generation || !this.#options.isLocal()) return yield* fail("stale_scope");
+      const owner = yield* Effect.try({ try: () => this.#options.authority.resolve(context), catch: boundaryFailure });
+      const privateEpoch = this.#privateEpoch ?? randomUUID();
+      const session: PlanningSession = {
+        generation,
+        privateEpoch,
+        localScopeId: owner.localScopeId,
+        windowDraftId: context.windowDraftId,
+      };
+      yield* Effect.try({ try: () => this.#options.windows.enroll(contents, privateEpoch), catch: boundaryFailure });
+      this.#privateEpoch = privateEpoch;
+      this.#sessions.set(contents, { contents, context, session, readable: true });
+      enrolled = true;
+      return session;
+    }).pipe(
+      Effect.ensuring(
+        Effect.suspend(() => {
+          if (!startedPublic || enrolled) return Effect.void;
+          // The admission owner still verifies that no private WebContents remain before release.
+          return this.#options.admission.finishPrivateExit().pipe(Effect.catch(() => Effect.void));
+        }),
+      ),
+    );
   });
   readonly stopActivity = Effect.fn("LocalPlanningMain.stopActivity")(function* (
     this: LocalPlanningMainService,

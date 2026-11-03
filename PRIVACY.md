@@ -1597,6 +1597,12 @@ search, normal exports, or support diagnostics. Aggregate storage totals can inc
 The database and its SQLite companion files are excluded from application-mediated transfers even
 when an agent workspace or additional folder overlaps the profile.
 
+Local file previews, downloads, archives, and remote uploads check the opened source before reading it.
+When you select Open copy, OpenBot keeps a checked copy under `local-open-copies` in the application
+profile and gives that copy to the external app. Changes in that app do not update the original.
+These copies remain in the profile because the external app can keep the file open. Show in folder
+continues to reveal the original path.
+
 Private planning excludes OpenBot screen viewing and native control. Entry is refused on an unproved
 configuration or while control cannot be confirmed stopped. Leaving requires every private window to
 save or explicitly discard input, followed by actual renderer destruction before control can resume.

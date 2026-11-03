@@ -6,6 +6,8 @@ import { TEAM_API_ROUTES } from "@openbot/contracts/team-api-routes";
 import type { Browser, Page } from "playwright-core";
 import { z } from "zod";
 import type { InspectorClient } from "../dev-automation/inspector-client";
+import { attachmentReadCases } from "./app-attachment-reads";
+import { attachmentUploadCases } from "./app-attachment-upload";
 import { applicationFileRaceCases } from "./app-file-races";
 import { loopbackConnection, privateSession, protocolHeaders, publicWindow } from "./app-fixture";
 import { exposePrivate } from "./electron-cases";
@@ -147,6 +149,8 @@ export async function applicationFileCases(
     assert.deepEqual(staged, { refused: true, ordinary: 1 });
     record("app-staged-transfer-refusal");
     await applicationFileRaceCases(main, page, record);
+    await attachmentUploadCases(main, page, record);
+    await attachmentReadCases(main, page, record);
     const exported = await main.evaluate(
       `(async()=>{const E=require("effect").Effect;const f=__planningFixture;const result=await E.runPromise(E.result(f.services.instanceTransfer.exportTo(f.fileFixture.exportPath,{agentIds:[f.fileFixture.agentId],includeFiles:true,includeSettings:false})));return result._tag==="Failure";})()`,
     );

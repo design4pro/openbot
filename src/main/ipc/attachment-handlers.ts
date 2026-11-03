@@ -2,7 +2,7 @@
 // Every path here crosses to the local filesystem, so the parsers are the boundary.
 
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, copyFile, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import {
   ARCHIVE_ATTACHMENT_EXTENSIONS,
@@ -40,13 +40,15 @@ import { Effect, Schema } from "effect";
 import { app, type BrowserWindow, dialog, type OpenDialogOptions, shell } from "electron";
 import { type Zippable, zip } from "fflate";
 import type { AgentService } from "../../backend/agent-service";
+import { attachmentCall, attachmentFailure } from "../../backend/attachment-effects";
 import { causeHelpers, runCauseEffect } from "../../backend/effect-boundary";
 import type { MailboxStore } from "../../backend/mailbox-store";
+import type { ProtectedProfileFiles } from "../../backend/protected-profile-files";
 import { filePreviewFromBytes, localFilePreview, mimeTypeForName } from "../file-preview";
 import { filePreviewPages } from "../file-preview-pages";
 import { decodeVoid } from "../remote-host-decoding";
 import type { RemoteServerManager } from "../remote-server-manager";
-import { remoteCall, remoteDecode } from "../remote-service-effects";
+import { RemoteWorkflowError, remoteDecode } from "../remote-service-effects";
 import {
   agentRequest,
   parseAttachmentData,
@@ -68,6 +70,7 @@ import { scopedHandler } from "./scoped-handler";
 export interface AttachmentIpcDependencies {
   service: Pick<
     AgentService,
+    | "protectedFiles"
     | "prepareAttachments"
     | "prepareImportedAttachments"
     | "discardDraftAttachment"
@@ -109,7 +112,7 @@ export function attachmentIpcHandlers({
     }
     if (action === "download") {
       const filePath = await chooseSavePath(getMainWindow(), translate, basename(name) || basename(path));
-      if (filePath) await copyFile(path, filePath);
+      if (filePath) await runCauseEffect(service.protectedFiles.copyAllowedFile(path, filePath));
       return;
     }
     await open();
@@ -135,13 +138,15 @@ export function attachmentIpcHandlers({
     attachmentImports: {
       importAttachments: scopedHandler(parseImportAttachments, {
         local: (parsed) => runCauseEffect(service.prepareImportedAttachments(parsed.paths, parsed.data)),
-        remote: (parsed, serverId) => runCauseEffect(uploadRemoteImports(remoteServers, serverId, parsed)),
+        remote: (parsed, serverId) =>
+          runCauseEffect(uploadRemoteImports(remoteServers, serverId, parsed, service.protectedFiles)),
       }),
     },
     agentAttachments: {
       importAttachmentData: scopedHandler(parseAttachmentData, {
         local: (data) => runCauseEffect(service.prepareImportedAttachments([], data)),
-        remote: (data, serverId) => runCauseEffect(uploadRemoteImports(remoteServers, serverId, { paths: [], data })),
+        remote: (data, serverId) =>
+          runCauseEffect(uploadRemoteImports(remoteServers, serverId, { paths: [], data }, service.protectedFiles)),
       }),
       releaseFilePreview: payloadHandler(parseFilePreviewPageUrl, (pageUrl) => filePreviewPages.release(pageUrl)),
       chooseAttachments: payloadHandler(agentRequest(parseChooseAttachments), async (parsed) => {
@@ -181,7 +186,8 @@ export function attachmentIpcHandlers({
         if (result.canceled) return [];
         return routeToServer(serverId, {
           local: () => runCauseEffect(service.prepareAttachments(result.filePaths)),
-          remote: (target) => runCauseEffect(uploadRemotePaths(remoteServers, target, result.filePaths)),
+          remote: (target) =>
+            runCauseEffect(uploadRemotePaths(remoteServers, target, result.filePaths, service.protectedFiles)),
         });
       }),
       discardDraftAttachment: scopedHandler(parseAttachmentId, {
@@ -207,7 +213,9 @@ export function attachmentIpcHandlers({
                     if (!attachment) return yield* archiveFailure(sourceText("error.attachment.notFound"));
                     if ((yield* archiveIO(() => stat(attachment.path))).size > ATTACHMENT_LIMITS.fileBytes)
                       return yield* archiveFailure(sourceText("error.attachment.fileTooLarge"));
-                    return yield* archiveIO(() => readFile(attachment.path));
+                    return yield* service.protectedFiles
+                      .readAllowedFile(attachment.path)
+                      .pipe(Effect.mapError((error) => new AttachmentArchiveFailed({ cause: error })));
                   })
                 : remoteServers.downloadAttachment(item.id, scoped.serverId).pipe(
                     Effect.map((downloaded) => downloaded.bytes),
@@ -217,7 +225,11 @@ export function attachmentIpcHandlers({
         );
       }),
       openAttachment: payloadHandler(agentRequest(parseOpenAttachment), (scoped) =>
-        openAttachmentForServer({ mailbox, remoteServers, getMainWindow, translate }, scoped.serverId, scoped.payload),
+        openAttachmentForServer(
+          { mailbox, remoteServers, getMainWindow, translate, protectedFiles: service.protectedFiles },
+          scoped.serverId,
+          scoped.payload,
+        ),
       ),
       openSharedFile: scopedHandler(parseOpenSharedFile, {
         local: async (parsed) => {
@@ -227,7 +239,7 @@ export function attachmentIpcHandlers({
           );
           // A member upload lands in the shared folder too, so a shared file opens only when its type is safe.
           await deliverLocalFile(sharedFile.path, sharedFile.name, parsed.action, () =>
-            openOrRevealPath(sharedFile.path),
+            openLocalCopy(service.protectedFiles, sharedFile.path, sharedFile.name),
           );
         },
         remote: async (parsed, serverId) => {
@@ -241,7 +253,12 @@ export function attachmentIpcHandlers({
           // A file outside the workspace can be anything on the computer, including a program, so it is
           // shown in the file manager rather than run.
           await deliverLocalFile(workspaceFile.path, workspaceFile.name, parsed.action, async () => {
-            if (workspaceFile.insideWorkspace) await openPath(workspaceFile.path);
+            if (workspaceFile.insideWorkspace)
+              await openPath(
+                await runCauseEffect(
+                  stageLocalOpenCopy(service.protectedFiles, workspaceFile.path, workspaceFile.name),
+                ),
+              );
             else shell.showItemInFolder(workspaceFile.path);
           });
         },
@@ -271,7 +288,7 @@ export function attachmentIpcHandlers({
           const generation = filePreviewPages.generation;
           const sharedFile = await runCauseEffect(service.resolveSharedFile(parsed.path));
           return runCauseEffect(
-            localFilePreview(sharedFile.path, sharedFile.name, sharedFile.size, generation, parsed.maxBytes),
+            localFilePreview(service.protectedFiles, sharedFile.path, sharedFile.name, generation, parsed.maxBytes),
           );
         },
         remote: async (parsed, serverId) => {
@@ -286,7 +303,13 @@ export function attachmentIpcHandlers({
           const generation = filePreviewPages.generation;
           const workspaceFile = await runCauseEffect(service.resolveLocalWorkspaceFile(parsed.agentId, parsed.path));
           return runCauseEffect(
-            localFilePreview(workspaceFile.path, workspaceFile.name, workspaceFile.size, generation, parsed.maxBytes),
+            localFilePreview(
+              service.protectedFiles,
+              workspaceFile.path,
+              workspaceFile.name,
+              generation,
+              parsed.maxBytes,
+            ),
           );
         },
         remote: async (parsed, serverId) => {
@@ -301,6 +324,7 @@ export function attachmentIpcHandlers({
 }
 
 export type OpenAttachmentDependencies = Pick<AttachmentIpcDependencies, "getMainWindow" | "translate"> & {
+  protectedFiles: ProtectedProfileFiles;
   mailbox: Pick<MailboxStore, "resolveAttachment">;
   remoteServers: Pick<RemoteServerManager, "downloadAttachment">;
 };
@@ -310,7 +334,7 @@ export type OpenAttachmentDependencies = Pick<AttachmentIpcDependencies, "getMai
  * chat and the storage surfaces both reach a file by its attachment id, so they share this.
  */
 export function openAttachmentForServer(
-  { mailbox, remoteServers, getMainWindow, translate }: OpenAttachmentDependencies,
+  { mailbox, remoteServers, getMainWindow, translate, protectedFiles }: OpenAttachmentDependencies,
   serverId: string,
   input: OpenAttachmentInput,
 ): Promise<void> {
@@ -323,14 +347,14 @@ export function openAttachmentForServer(
         const suggestedName = basename(attachment.name) || `attachment-${safeId}`;
         const filePath = await chooseSavePath(getMainWindow(), translate, suggestedName);
         if (!filePath) return;
-        await copyFile(attachment.path, filePath);
+        await runCauseEffect(protectedFiles.copyAllowedFile(attachment.path, filePath));
         return;
       }
       if (input.action === "reveal") {
         shell.showItemInFolder(attachment.path);
         return;
       }
-      await openOrRevealPath(attachment.path);
+      await openLocalCopy(protectedFiles, attachment.path, attachment.name);
     },
     remote: async (target) => {
       const downloaded = await runCauseEffect(remoteServers.downloadAttachment(input.attachmentId, target));
@@ -349,6 +373,37 @@ export function openAttachmentForServer(
       else await openOrRevealPath(cached);
     },
   });
+}
+
+// External programs cannot keep the original checked handle. A unique copy avoids reopening or overwriting it.
+const stageLocalOpenCopy = Effect.fn("AttachmentIpc.stageLocalOpenCopy")(function* (
+  protectedFiles: ProtectedProfileFiles,
+  path: string,
+  name: string,
+) {
+  const directory = join(app.getPath("userData"), "local-open-copies", randomUUID());
+  const target = join(directory, safeFileName(name) || "file");
+  let retained = false;
+  return yield* Effect.gen(function* () {
+    yield* attachmentCall(() => mkdir(directory, { recursive: true, mode: 0o700 }));
+    yield* protectedFiles.copyAllowedFile(path, target, true).pipe(Effect.mapError(attachmentFailure));
+    retained = true;
+    return target;
+  }).pipe(
+    Effect.ensuring(
+      Effect.suspend(() =>
+        retained
+          ? Effect.void
+          : attachmentCall(() => rm(directory, { recursive: true, force: true })).pipe(Effect.catch(() => Effect.void)),
+      ),
+    ),
+  );
+});
+
+async function openLocalCopy(protectedFiles: ProtectedProfileFiles, path: string, name: string): Promise<void> {
+  if (isOpenableAttachmentName(name))
+    await openPath(await runCauseEffect(stageLocalOpenCopy(protectedFiles, path, name)));
+  else shell.showItemInFolder(path);
 }
 
 // A remote file has to land on disk before the OS can open it. Owner-only, under a per-server and
@@ -417,6 +472,7 @@ const uploadRemotePaths = Effect.fn("AttachmentIpc.uploadRemotePaths")(function*
   remoteServers: AttachmentIpcDependencies["remoteServers"],
   serverId: string,
   paths: string[],
+  protectedFiles: ProtectedProfileFiles,
 ) {
   yield* remoteDecode(() => {
     if (paths.length > INPUT_LIMITS.attachments) {
@@ -432,7 +488,8 @@ const uploadRemotePaths = Effect.fn("AttachmentIpc.uploadRemotePaths")(function*
   const files = yield* Effect.forEach(
     paths,
     (path) =>
-      remoteCall(() => readFile(path)).pipe(
+      protectedFiles.readAllowedFile(path).pipe(
+        Effect.mapError((error) => new RemoteWorkflowError({ cause: error })),
         Effect.map((bytes) => ({
           name: basename(path),
           mimeType: mimeTypeForName(path),
@@ -448,6 +505,7 @@ const uploadRemoteImports = Effect.fn("AttachmentIpc.uploadRemoteImports")(funct
   remoteServers: AttachmentIpcDependencies["remoteServers"],
   serverId: string,
   input: ImportAttachmentsInput,
+  protectedFiles: ProtectedProfileFiles,
 ) {
   yield* remoteDecode(() => {
     if (input.paths.length + input.data.length > INPUT_LIMITS.attachments) {
@@ -461,7 +519,8 @@ const uploadRemoteImports = Effect.fn("AttachmentIpc.uploadRemoteImports")(funct
   const pathFiles = yield* Effect.forEach(
     input.paths,
     (path) =>
-      remoteCall(() => readFile(path)).pipe(
+      protectedFiles.readAllowedFile(path).pipe(
+        Effect.mapError((error) => new RemoteWorkflowError({ cause: error })),
         Effect.map((bytes) => ({
           name: basename(path),
           mimeType: mimeTypeForName(path),

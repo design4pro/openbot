@@ -74,6 +74,7 @@ export function storageIpcHandlers({
   remoteServers,
   getMainWindow,
   translate,
+  protectedFiles,
   agents,
   openPath,
 }: StorageIpcDependencies): Pick<IpcGroupHandlers, "storage"> {
@@ -135,10 +136,14 @@ export function storageIpcHandlers({
       // A stored file is a sent or generated attachment, so the chat's open path serves it.
       openFile: payloadHandler(agentRequest(parseOpenStoredFileInput), (scoped) => {
         const parsed = scoped.payload;
-        return openAttachmentForServer({ mailbox, remoteServers, getMainWindow, translate }, scoped.serverId, {
-          attachmentId: parsed.fileId,
-          action: parsed.action,
-        });
+        return openAttachmentForServer(
+          { mailbox, remoteServers, getMainWindow, translate, protectedFiles },
+          scoped.serverId,
+          {
+            attachmentId: parsed.fileId,
+            action: parsed.action,
+          },
+        );
       }),
       // Local only: a remote host's workspace is a path on another computer.
       openLocation: payloadHandler(parseOpenStorageLocationInput, async ({ agentId }) => {

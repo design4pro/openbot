@@ -180,7 +180,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Deferred, Effect, Result } from "effect";
 import { afterEach, beforeEach, vi } from "vitest";
+import { LocalProfileIdentityInvalid } from "../../backend/database/local-profile-identity";
 import { LocalPlanningAuthority } from "../../backend/local-planning/local-planning-authority";
+import { LocalPlanningFailure } from "../../backend/local-planning/local-planning-errors";
 import { LocalPlanningService } from "../../backend/local-planning/local-planning-service";
 import { OpenBotDatabase } from "../../backend/openbot-database";
 import { LocalPlanningMainService } from "../local-planning-service";
@@ -255,6 +257,84 @@ async function failure<A>(operation: Effect.Effect<A, { code: string }>, code: s
 }
 
 describe("main-only planning session and exit boundary", () => {
+  it("keeps public operations usable after a first invalid-identity entry", async () => {
+    const identity = fixture.database.localIdentity.read();
+    const read = vi.spyOn(fixture.database.localIdentity, "read").mockImplementation(() => {
+      throw new LocalProfileIdentityInvalid({ code: "identity_invalid" });
+    });
+    try {
+      await failure(fixture.main.enter(fixture.first.event()), "identity_invalid");
+      expect(fixture.admission.snapshot().phase).toBe("public");
+      expect((await Effect.runPromise(fixture.main.availability(fixture.first.event()))).privateEpoch).toBeNull();
+      const lease = await Effect.runPromise(fixture.admission.acquirePublic("after-invalid-identity", "capture"));
+      lease.releaseVerified();
+    } finally {
+      read.mockRestore();
+    }
+    expect(fixture.database.localIdentity.read()).toEqual(identity);
+  });
+  it.each(["withdrawn sender", "changed host"] as const)(
+    "releases only an unexposed entry after %s",
+    async (change) => {
+      const started = Promise.withResolvers<void>();
+      const resume = Promise.withResolvers<void>();
+      const enter = fixture.admission.enterPrivate;
+      const intercepted = vi.spyOn(fixture.admission, "enterPrivate").mockImplementation(() =>
+        enter.call(fixture.admission).pipe(
+          Effect.tap(() =>
+            Effect.promise(async () => {
+              started.resolve();
+              await resume.promise;
+            }),
+          ),
+        ),
+      );
+      const pending = Effect.runPromise(Effect.result(fixture.main.enter(fixture.first.event())));
+      await started.promise;
+      if (change === "withdrawn sender") fixture.main.rendererGone(fixture.first.contents);
+      else {
+        fixture.host.local = false;
+        fixture.main.invalidateScopes();
+      }
+      resume.resolve();
+      try {
+        const result = await pending;
+        expect(Result.isFailure(result)).toBe(true);
+        if (Result.isFailure(result))
+          expect(result.failure.code).toBe(change === "withdrawn sender" ? "forbidden" : "stale_scope");
+        expect(fixture.admission.snapshot().phase).toBe("public");
+        const lease = await Effect.runPromise(fixture.admission.acquirePublic("after-withdrawn-entry", "capture"));
+        lease.releaseVerified();
+      } finally {
+        intercepted.mockRestore();
+      }
+    },
+  );
+  it("keeps another window's existing private epoch after an entry failure", async () => {
+    const session = await Effect.runPromise(fixture.main.enter(fixture.first.event()));
+    const issue = vi.spyOn(fixture.authority, "issue").mockImplementation(() => {
+      throw new LocalPlanningFailure({ code: "identity_invalid" });
+    });
+    try {
+      await failure(fixture.main.enter(fixture.second.event()), "identity_invalid");
+    } finally {
+      issue.mockRestore();
+    }
+    expect(fixture.admission.snapshot().phase).toBe("private");
+    expect((await Effect.runPromise(fixture.main.availability(fixture.first.event()))).privateEpoch).toBe(
+      session.privateEpoch,
+    );
+    await expect(
+      Effect.runPromise(fixture.admission.acquirePublic("existing-private-epoch", "capture")),
+    ).rejects.toThrow();
+    expect(
+      (
+        await Effect.runPromise(
+          fixture.main.listProjects(fixture.first.event(), { session: { generation: session.generation }, input: {} }),
+        )
+      ).items,
+    ).toEqual([]);
+  });
   it("aborts an exit with a missing acknowledgement without releasing private input", async () => {
     vi.useFakeTimers();
     try {

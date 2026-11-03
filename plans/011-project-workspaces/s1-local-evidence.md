@@ -119,3 +119,23 @@ WAN/TURN, production deployment, or broad CI suite was exercised. Runtime status
 are not provider execution. Local planning operations in UI proof record zero sendMessage/startTask
 and zero GitHub connector operations. The application privacy boundary does not cover full-access
 same-user processes.
+
+## Independent review follow-up
+
+The single independent whole-branch review found two file-delivery gaps and two admission/configuration
+gaps. Actual native-path uploads failed before the guards; all nine local preview/save/archive/open
+replacement cases failed before the final-reader and checked-copy changes. The focused main boundary
+file failed three first-entry recovery cases before its fix and now passes 28/28 cases.
+
+- Files report `37d32476-8423-4ec3-bc43-e162a4549703` passes 38 application cases, including ordinary
+  controls and all replacement cases. This is pre-commit evidence with source/bundle hashes.
+- Negative platform report `5b980108-ed15-4405-bb8f-21707a491602` rejects an unknown distribution and
+  Ubuntu 24.10 through the real compiled gate. Its `electron-platform` basis is not full integration
+  evidence. The gate now requires `ID=ubuntu` and `VERSION_ID=24.04` plus every existing native pin.
+- External opening retains checked copies under the profile's `local-open-copies` directory. The UI
+  says Open copy and explains that external edits do not update the original. The test observes the
+  final OS handoff port; it does not certify an external program or OS confinement.
+
+The first rerun of the files group correctly failed ordinary export because an earlier watchdog-aborted
+owned fixture left a database hard link in Shared. Only that exact inode-confirmed fixture alias was
+removed. Neither export protection nor the failure report was suppressed.
