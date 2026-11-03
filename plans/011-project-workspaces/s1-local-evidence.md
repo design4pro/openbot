@@ -139,3 +139,14 @@ file failed three first-entry recovery cases before its fix and now passes 28/28
 The first rerun of the files group correctly failed ordinary export because an earlier watchdog-aborted
 owned fixture left a database hard link in Shared. Only that exact inode-confirmed fixture alias was
 removed. Neither export protection nor the failure report was suppressed.
+
+The final post-review integration on commit `e5f35128b` passes all 88 application observations:
+Electron `2a472041-3d96-4660-b3b3-327cf332f371` (14), UI
+`cdaac86e-5585-421d-8c55-f71e653e6b82` (23), files
+`110bb5b7-9c79-44a3-b7d0-96192f185a57` (38), and remote
+`12534440-36ee-4ac9-b5fc-5cef74b08f6c` (13). Launcher
+`b64556ac-094e-4b75-98c8-440274790bbd` stops both stacks with no unresolved records.
+OOM counters remain 50/6. Verifier `278b6d24-5134-483d-a5d2-8e165bdeeb95` passes actual
+application controls and rejects missing runtime/cases, a false native label, and owned worker SIGKILL.
+Focused boundary tests pass 28/28. Node/renderer types, changed-file Biome, i18n validation, and the
+normal commit hook pass. Broader checks remain assigned to CI. No second review was dispatched.
