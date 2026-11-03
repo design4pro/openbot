@@ -153,6 +153,30 @@ export async function nativeCases(
     assert.equal((await Effect.runPromise(runtime.state())).status, "error");
     await Effect.runPromise(runtime.warmUp());
     assert.equal(runtime.running(), false);
+    for (const address of [join(directory, "tap.sock"), runtime.socketPath()]) {
+      const freshProxy = new Client({ name: "planning-cached-config-proof", version: "1" });
+      const freshTransport = new StdioClientTransport({
+        command: executable,
+        args: ["mcp", "--socket", address],
+        env: { ...getDefaultEnvironment(), ...CUA_DRIVER_VENDOR_CALLS_OFF, DISPLAY: display, CUA_DRIVER_EMBEDDED: "1" },
+      });
+      let nativeRead = false;
+      try {
+        await freshProxy.connect(freshTransport, { timeout: 15000 });
+        const answer = await freshProxy.callTool(
+          { name: "list_windows", arguments: { on_screen_only: true } },
+          undefined,
+          { timeout: 15000 },
+        );
+        nativeRead = answer.isError !== true;
+      } catch {
+        /* Transport refusal also prevents native access. */
+      } finally {
+        await freshProxy.close();
+        await freshTransport.close();
+      }
+      assert.equal(nativeRead, false, "A cached proxy configuration restarted native access during private planning.");
+    }
     record("native-private-restart");
     await Effect.runPromise(admission.finishPrivateExit());
     await Effect.runPromise(runtime.start());
