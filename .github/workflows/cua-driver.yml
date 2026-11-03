@@ -1,6 +1,7 @@
 name: Computer Use driver pin
 
 # The driver is a vendor release, pinned by tag, asset digest, and one digest per shipped file.
+# This workflow checks artifact integrity, not private-planning native or Electron safety.
 # Nothing builds it, so there is no recipe to check - only the question of whether the pin still
 # resolves. `release.yml` is the first place that asks today, which makes a deleted or rewritten
 # upstream asset a failure at tag time. This job asks on the pull request that moves the pin, and

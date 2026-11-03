@@ -176,6 +176,27 @@ jobs:
               sudo apt-get update
               sudo apt-get install --no-install-recommends --yes xvfb
 
+      - name: Install native planning proof prerequisites
+        run: sudo apt-get install --no-install-recommends --yes python3-xlib xauth
+
+      - name: Install pinned native planning runtimes
+        run: |
+          bun scripts/install-cua-driver.ts
+          bun scripts/install-remote-desktop-runtime.ts
+
+      - name: Run native planning privacy proof
+        env:
+          OPENBOT_PLANNING_ISOLATED: xvfb
+        run: xvfb-run -a sh -c 'bun scripts/project-planning-e2e.ts --group native --isolated-display="$DISPLAY"'
+
+      - name: Upload native planning evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: local-planning-native
+          path: .openbot-build/project-planning/
+          if-no-files-found: error
+
       - name: Run the browser smoke test
         run: xvfb-run -a bun run test:browser
 

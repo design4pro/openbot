@@ -7,8 +7,23 @@ export const planningReportSchema = z.strictObject({
   commit: z.string().regex(/^[a-f0-9]{40}$/),
   platform: z.string(),
   runtime: z.string(),
-  group: z.enum(["identity", "files-service", "admission", "domain", "reviews"]),
-  basis: z.literal("service"),
+  group: z.enum(["identity", "files-service", "admission", "domain", "reviews", "native"]),
+  basis: z.enum(["service", "native"]),
+  nativeRuntime: z
+    .object({
+      driverDigest: z.string().regex(/^[a-f0-9]{64}$/),
+      driverVersion: z.string(),
+      displayBackend: z.literal("x11"),
+      osMajor: z.string(),
+      kernelRelease: z.string(),
+      executionEnvironment: z.string(),
+      remoteDigests: z.object({
+        sunshine: z.string().regex(/^[a-f0-9]{64}$/),
+        moonlightWebServer: z.string().regex(/^[a-f0-9]{64}$/),
+        moonlightStreamer: z.string().regex(/^[a-f0-9]{64}$/),
+      }),
+    })
+    .optional(),
   sourceHashes: z.record(z.string(), z.string().regex(/^[a-f0-9]{64}$/)),
   cases: z.array(z.string()),
   passed: z.boolean(),
@@ -22,6 +37,19 @@ export function verifyPlanningReport(value: unknown): PlanningReport {
   assert.equal(report.failure, null, "Planning report has a failure");
   assert.equal(new Set(report.cases).size, report.cases.length, "Duplicate planning cases");
   const requirements = {
+    native: [
+      "native-public-lifetime",
+      "stale-native-client",
+      "native-private-restart",
+      "native-delayed-start",
+      "native-uncertain-stop",
+      "native-public-resume",
+      "native-remote-runtime",
+      "native-daemon-query",
+      "native-queued-input",
+      "native-restart-reconciliation",
+      "native-unexpected-exit",
+    ],
     identity: [
       "identity-reopen",
       "identity-copy",
@@ -75,6 +103,10 @@ export function verifyPlanningReport(value: unknown): PlanningReport {
       "capture-delivery-lifetime",
     ],
   };
+  if (report.group === "native") {
+    assert.equal(report.basis, "native");
+    assert.ok(report.nativeRuntime);
+  } else assert.equal(report.basis, "service");
   const required = requirements[report.group];
   for (const id of required) assert.ok(report.cases.includes(id), `Missing planning case: ${id}`);
   assert.ok(Object.keys(report.sourceHashes).length > 0, "Missing source hashes");

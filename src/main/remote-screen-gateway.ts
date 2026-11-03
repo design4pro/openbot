@@ -22,6 +22,8 @@ import { runCauseEffect } from "../backend/effect-boundary";
 import { recordRestartActivity } from "../backend/restart-activity";
 import { readBodyWithin } from "./http-body";
 import { listenLoopback } from "./listen-loopback";
+import { PrivatePlanningError } from "./private-planning-admission";
+import type { PrivatePlanningNative } from "./private-planning-native";
 import { RemoteDesktopOperationError } from "./remote-desktop-effects";
 import { remoteDesktopPasteScript } from "./remote-desktop-paste";
 import type { RemoteDesktopRuntimePaths } from "./remote-desktop-runtime-artifact";
@@ -68,6 +70,7 @@ export type RemoteScreenGatewayCreateRuntime = (
 ) => RemoteScreenRuntime;
 
 interface RemoteScreenGatewayOptions {
+  privatePlanningNative: PrivatePlanningNative;
   platform: "darwin" | "win32" | "linux";
   // Read for a Linux host only. Defaults to the environment of this process.
   sessionEnvironment?: Readonly<Record<string, string | undefined>>;
@@ -158,6 +161,7 @@ export class RemoteScreenGateway {
   readonly #httpRequests = new Set<IncomingMessage>();
   #stopping: Deferred.Deferred<void, RemoteWorkflowError> | null = null;
   #runtime: RemoteScreenRuntime | null = null;
+  readonly #activityId = randomUUID();
   #runtimeState: SunshineMoonlightRuntimeState | null = null;
   #runtimeStarting: Fiber.Fiber<SunshineMoonlightRuntimeState, RemoteWorkflowError> | null = null;
   #runtimeStopping: Fiber.Fiber<void, RemoteWorkflowError> | null = null;
@@ -999,11 +1003,22 @@ export class RemoteScreenGateway {
     this.#runtime = null;
     this.#runtimeState = null;
     this.#testSessionId = null;
-    if (!runtime) return;
+    if (!runtime) {
+      yield* this.#options.privatePlanningNative
+        .finish(this.#activityId)
+        .pipe(Effect.mapError((cause) => new RemoteWorkflowError({ cause })));
+      return;
+    }
     const fiber = yield* Effect.forkIn(
-      runtime
-        .stop()
-        .pipe(Effect.mapError(({ cause }: RemoteDesktopOperationError) => new RemoteWorkflowError({ cause }))),
+      runtime.stop().pipe(
+        Effect.mapError(({ cause }: RemoteDesktopOperationError) => new RemoteWorkflowError({ cause })),
+        Effect.andThen(
+          this.#options.privatePlanningNative
+            .finish(this.#activityId)
+            .pipe(Effect.mapError((cause) => new RemoteWorkflowError({ cause }))),
+        ),
+        Effect.onError(() => Effect.sync(() => this.#options.privatePlanningNative.uncertain(this.#activityId))),
+      ),
       this.#scope,
       { startImmediately: false },
     );
@@ -1015,15 +1030,27 @@ export class RemoteScreenGateway {
   });
 
   readonly #ensureRuntime = Effect.fn("RemoteScreenGateway.ensureRuntime")(function* (this: RemoteScreenGateway) {
-    if (this.#runtimeStarting) return yield* Fiber.join(this.#runtimeStarting);
-    const fiber = yield* Effect.forkIn(this.#startRuntime().pipe(Effect.provide(this.#layer)), this.#scope, {
-      startImmediately: false,
-    });
-    this.#runtimeStarting = fiber;
-    fiber.addObserver(() => {
-      if (this.#runtimeStarting === fiber) this.#runtimeStarting = null;
-    });
-    return yield* Fiber.join(fiber);
+    return yield* Effect.uninterruptibleMask((restore) =>
+      Effect.gen({ self: this }, function* () {
+        const reservation = yield* this.#options.privatePlanningNative
+          .reserveStart("remote_screen_runtime")
+          .pipe(Effect.mapError((cause) => new RemoteWorkflowError({ cause })));
+        const release = Effect.sync(() => reservation.releaseVerified());
+        if (this.#runtimeStarting)
+          return yield* restore(Fiber.join(this.#runtimeStarting)).pipe(Effect.ensuring(release));
+        // The owned startup fiber keeps this reservation even if its requesting connection goes away.
+        const fiber = yield* Effect.forkIn(
+          this.#startRuntime().pipe(Effect.provide(this.#layer), Effect.ensuring(release)),
+          this.#scope,
+          { startImmediately: false },
+        );
+        this.#runtimeStarting = fiber;
+        fiber.addObserver(() => {
+          if (this.#runtimeStarting === fiber) this.#runtimeStarting = null;
+        });
+        return yield* restore(Fiber.join(fiber));
+      }),
+    );
   });
 
   readonly #startRuntime = Effect.fn("RemoteScreenGateway.startRuntime")(function* (
@@ -1035,11 +1062,20 @@ export class RemoteScreenGateway {
     const paths = this.#options.runtimePaths;
     if (!paths || this.#linuxWithoutX11)
       return yield* new RemoteWorkflowError({ cause: new Error(sourceText("error.remote.runtimeUnavailable")) });
+    yield* this.#options.privatePlanningNative
+      .begin(this.#activityId, "remote_screen_runtime", () =>
+        this.stop().pipe(Effect.mapError(() => new PrivatePlanningError({ code: "privacy_busy" }))),
+      )
+      .pipe(Effect.mapError((cause) => new RemoteWorkflowError({ cause })));
     const dependencies = yield* ScreenDependencies;
     if (!this.#runtime) {
       const onDiagnostic = this.#options.onDiagnostic;
       const runtime: RemoteScreenRuntime = this.#options.createRuntime({
         paths,
+        onNativeChild: (child) =>
+          this.#options.privatePlanningNative
+            .track(this.#activityId, child)
+            .pipe(Effect.mapError((cause) => new RemoteDesktopOperationError({ cause }))),
         stateDirectory: this.#options.runtimeStateDirectory,
         platform: this.#options.platform,
         credentials: yield* dependencies.credentials(),
@@ -1063,6 +1099,7 @@ export class RemoteScreenGateway {
     this.#runtimeState = yield* runtime
       .start()
       .pipe(Effect.mapError(({ cause }: RemoteDesktopOperationError) => new RemoteWorkflowError({ cause })));
+    this.#options.privatePlanningNative.active(this.#activityId);
     this.#selectedDisplayId = this.#runtimeState.selectedDisplayId;
     return this.#runtimeState;
   });
@@ -1087,6 +1124,7 @@ export class RemoteScreenGateway {
   // The runtime's processes are gone, so no session it served can stream again. End them and stop
   // what is left of it; the next session starts a new runtime, and a start that fails names its reason.
   readonly #runtimeExited = Effect.fn("RemoteScreenGateway.runtimeExited")(function* (this: RemoteScreenGateway) {
+    this.#options.privatePlanningNative.uncertain(this.#activityId);
     yield* Effect.all(
       [...this.#sessions.keys()].map((id) => this.closeSession(id, "connection_failed")),
       { concurrency: "unbounded" },

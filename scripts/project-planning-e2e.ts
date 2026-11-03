@@ -26,13 +26,14 @@ if (args[0] === "--identity-worker" && args.length === 2) {
   verifyPlanningReport(JSON.parse(await readFile(args[1] ?? "", "utf8")));
   logger.info("Planning report verified.");
 } else if (
-  args.length === 2 &&
+  (args.length === 2 || (args.length === 3 && args[2]?.startsWith("--isolated-display="))) &&
   args[0] === "--group" &&
   (args[1] === "identity" ||
     args[1] === "files-service" ||
     args[1] === "admission" ||
     args[1] === "domain" ||
-    args[1] === "reviews")
+    args[1] === "reviews" ||
+    args[1] === "native")
 ) {
   const group = args[1];
   const runId = randomUUID();
@@ -82,6 +83,23 @@ if (args[0] === "--identity-worker" && args.length === 2) {
     );
   if (group === "reviews")
     sourceFiles.push("scripts/project-planning/reviews.ts", "src/backend/local-planning/local-planning-reviews.ts");
+  if (group === "native")
+    sourceFiles.push(
+      "scripts/project-planning/native.ts",
+      "scripts/project-planning/native-fixture.ts",
+      "scripts/install-remote-desktop-runtime.ts",
+      "scripts/native-runtime-lock.ts",
+      "scripts/cua-driver-lock.ts",
+      "scripts/project-planning/x11-input-probe.py",
+      "src/main/cua-driver-runtime.ts",
+      "src/main/private-planning-native.ts",
+      "src/main/cua-driver-daemon-client.ts",
+      "src/main/cua-driver-action-tap.ts",
+      "src/main/remote-screen-gateway.ts",
+      "src/main/sunshine-moonlight-runtime.ts",
+      "src/main/private-planning-admission.ts",
+      "native-runtime.lock.json",
+    );
   for (const file of sourceFiles)
     sourceHashes[file] = createHash("sha256")
       .update(await readFile(join(root, file)))
@@ -93,27 +111,38 @@ if (args[0] === "--identity-worker" && args.length === 2) {
     platform: `${process.platform}-${process.arch}`,
     runtime: `Node ${process.version}`,
     group,
-    basis: "service",
+    basis: group === "native" ? "native" : "service",
     sourceHashes,
     cases: [],
     passed: false,
     failure: null,
   };
   try {
-    const { identityCases } = await import("./project-planning/identity");
-    report.cases =
-      group === "identity"
-        ? await identityCases(fixture)
-        : group === "files-service"
-          ? await (await import("./project-planning/files")).fileServiceCases(fixture)
-          : group === "admission"
-            ? await (await import("./project-planning/admission")).admissionCases()
-            : group === "domain"
-              ? await (await import("./project-planning/domain")).domainCases(fixture)
-              : await (await import("./project-planning/reviews")).reviewCases(fixture);
+    if (group === "native") {
+      const result = await (await import("./project-planning/native")).nativeCases(
+        fixture,
+        args[2]?.slice("--isolated-display=".length) ?? "",
+        (id) => report.cases.push(id),
+      );
+      report.cases = result.cases;
+      report.nativeRuntime = result.nativeRuntime;
+    } else {
+      const { identityCases } = await import("./project-planning/identity");
+      report.cases =
+        group === "identity"
+          ? await identityCases(fixture)
+          : group === "files-service"
+            ? await (await import("./project-planning/files")).fileServiceCases(fixture)
+            : group === "admission"
+              ? await (await import("./project-planning/admission")).admissionCases()
+              : group === "domain"
+                ? await (await import("./project-planning/domain")).domainCases(fixture)
+                : await (await import("./project-planning/reviews")).reviewCases(fixture);
+    }
     report.passed = true;
     verifyPlanningReport(report);
   } catch (error) {
+    report.passed = false;
     report.failure = error instanceof Error ? error.name : "PlanningFailure";
     process.exitCode = 1;
   } finally {

@@ -1,3 +1,4 @@
+import { nativePlanningFixture } from "./project-planning/native-fixture";
 // Checks mute and unmute of a server's desktop notifications on the real main-process path. The
 // renderer's request goes through the real `servers:set-muted` IPC handler, with its sender check
 // and its decoder, into a real `RemoteServerManager` on a temporary profile. A finished agent turn
@@ -270,6 +271,7 @@ try {
   const serviceForHost = agents;
   assert.ok(serviceForHost);
   const host = new HostService({
+    privatePlanningNative: nativePlanningFixture(join(root, "native-privacy")).native,
     appVersion: APP_VERSION,
     store: team,
     agents: serviceForHost,

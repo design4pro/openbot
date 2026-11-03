@@ -1,3 +1,4 @@
+import { nativePlanningFixture } from "./project-planning/native-fixture";
 // Checks the channel notifications of the desktop and the channel-attention-v1 fields of the Team API.
 // Events go through the real notification forwarder, with an Electron `Notification` that records
 // what it shows and a window that records what it sends to the renderer. The channel list comes
@@ -369,6 +370,7 @@ try {
       await runCauseEffect(manager.initialize());
       await runCauseEffect(manager.setNotificationLevel(LOCAL_SERVER_ID, "all"));
       const host = new HostService({
+        privatePlanningNative: nativePlanningFixture(join(root, "native-privacy")).native,
         appVersion: APP_VERSION,
         store: team,
         agents,

@@ -8,6 +8,7 @@ import { z } from "zod";
 import { runCauseEffect } from "../src/backend/effect-boundary";
 import { resolveRemoteDesktopRuntime } from "../src/main/remote-desktop-runtime-artifact";
 import { RemoteScreenGateway } from "../src/main/remote-screen-gateway";
+import { nativePlanningFixture } from "./project-planning/native-fixture";
 
 const logger = createOpenBotLogger("remote-desktop-browser-harness");
 
@@ -31,6 +32,7 @@ const clientCount = z.coerce
   .parse(process.env.OPENBOT_REMOTE_E2E_CLIENTS ?? "1");
 const stateDirectory = await mkdtemp(join(tmpdir(), "openbot-remote-browser-e2e-"));
 const gateway = new RemoteScreenGateway({
+  privatePlanningNative: nativePlanningFixture(join(stateDirectory, "native-privacy")).native,
   platform,
   unattended: false,
   runtimePaths,

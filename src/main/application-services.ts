@@ -40,6 +40,8 @@ import { LocalSkillLibrary } from "./local-skill-library";
 import { localSkillTools } from "./local-skill-tools";
 import { MAC_PERMISSION_URLS } from "./mac-permission-urls";
 import { PrivatePlanningAdmission, PrivatePlanningError } from "./private-planning-admission";
+import { PrivatePlanningNative } from "./private-planning-native";
+import { privatePlanningSupported } from "./private-planning-support";
 import { PushNotificationStore } from "./push-notification-store";
 import { DESKTOP_USE_MS } from "./push-notifications";
 import { RemoteWorkflowError, toRemoteWorkflowError } from "./remote-service-effects";
@@ -1022,8 +1024,18 @@ export async function createApplicationServices({
   await runCauseEffect(agentDefaults.load());
   // Closed until native ownership and private-window lifecycle adapters are installed.
   const privatePlanningAdmission = new PrivatePlanningAdmission({
-    checkQuiescent: () => Effect.fail(new PrivatePlanningError({ code: "privacy_busy" })),
+    checkQuiescent: () =>
+      Effect.gen(function* () {
+        if (!(yield* privatePlanningSupported(cuaDriver.executablePath(), remoteDesktopRuntime)))
+          return yield* new PrivatePlanningError({ code: "privacy_busy" });
+        yield* privatePlanningNative.checkQuiescent();
+      }),
     privateRenderersDestroyed: () => false,
+  });
+  const privatePlanningNative = new PrivatePlanningNative({
+    admission: privatePlanningAdmission,
+    stateDirectory: join(app.getPath("userData"), "private-native-lifetimes"),
+    nativeArguments: () => [cuaDriver.socketPath(), join(app.getPath("userData"), "remote-desktop-runtime")],
   });
   const store = new AgentStore(
     app.getPath("userData"),
@@ -1552,6 +1564,7 @@ export async function createApplicationServices({
     });
   };
   const cuaDriver = new CuaDriverRuntime({
+    privatePlanningNative,
     executable: await Effect.runPromise(resolveCuaDriverExecutable()),
     resolveExecutable: resolveCuaDriverExecutable,
     // Linux ships as an AppImage, whose mount is somewhere else at each launch, so the command the
@@ -1589,8 +1602,9 @@ export async function createApplicationServices({
    * which an MCP client of OpenBot's could not see: the tools report only the sessions of the lease
    * that asks, and the agent's lease is its own.
    */
-  const computerUseReads = new CuaDriverDaemonClient(() =>
-    cuaDriver.mcpServerForProviders() ? cuaDriver.socketPath() : null,
+  const computerUseReads = new CuaDriverDaemonClient(
+    () => (cuaDriver.mcpServerForProviders() ? cuaDriver.socketPath() : null),
+    privatePlanningAdmission,
   );
   const computerUseHighlight = new ComputerUseHighlightController({
     createWindow: createComputerUseHighlightWindow,
@@ -2396,6 +2410,7 @@ export async function createApplicationServices({
   const pushNotificationStore = new PushNotificationStore(join(app.getPath("userData"), PUSH_NOTIFICATION_FILE));
   await runCauseEffect(pushNotificationStore.load());
   const host = new HostService({
+    privatePlanningNative,
     appVersion: app.getVersion(),
     store: teamStore,
     agents: service,
