@@ -81,6 +81,7 @@ function draftTuple(input: DraftInput): unknown[] {
         input.target.id,
         "title" in input.form ? input.form.title : null,
         "goal" in input.form ? input.form.goal : null,
+        ...(input.target.formId ? [input.target.formId] : []),
       ];
     case "milestone":
       return [
@@ -89,6 +90,7 @@ function draftTuple(input: DraftInput): unknown[] {
         input.target.id,
         "title" in input.form ? input.form.title : null,
         "criteria" in input.form ? input.form.criteria : null,
+        ...(input.target.formId ? [input.target.formId] : []),
       ];
     case "ticket":
       return [
@@ -100,6 +102,7 @@ function draftTuple(input: DraftInput): unknown[] {
         "criteria" in input.form ? input.form.criteria : null,
         "notes" in input.form ? input.form.notes : null,
         "status" in input.form ? input.form.status : null,
+        ...(input.target.formId ? [input.target.formId] : []),
       ];
     case "review":
       return [

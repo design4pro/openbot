@@ -60,7 +60,7 @@ function decodeStoredDrafts(value: unknown): StoredComposerDrafts {
  * A queue edit stores its own draft (`QUEUE_EDIT_STORAGE_KEY`), so for that conversation this keeps
  * the draft the edit restores when it ends.
  */
-export function writeComposerDraftsOnChange(owner: ComposerDraftOwner): void {
+export function writeComposerDraftsOnChange(owner: ComposerDraftOwner): { flush: () => boolean } {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const write = () => {
     clearTimeout(timer);
@@ -86,8 +86,10 @@ export function writeComposerDraftsOnChange(owner: ComposerDraftOwner): void {
           threads: storableThreadDrafts(owner.threadDrafts()),
         }),
       );
+      return true;
     } catch {
       // Storage is full or unavailable. The drafts stay in memory for this session.
+      return false;
     }
   };
   createEffect(
@@ -114,6 +116,7 @@ export function writeComposerDraftsOnChange(owner: ComposerDraftOwner): void {
     window.removeEventListener("pagehide", flush);
     flush();
   });
+  return { flush: write };
 }
 
 function storableDrafts(drafts: Drafts): Record<string, { text: string }> {

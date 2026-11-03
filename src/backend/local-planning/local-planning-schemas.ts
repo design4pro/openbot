@@ -26,15 +26,29 @@ const draftFields = {
 };
 export const draftInputSchema = Schema.Union([
   Schema.Struct({
-    target: Schema.Struct({ kind: Schema.Literal("project"), id: nullableId }),
+    target: Schema.Struct({
+      kind: Schema.Literal("project"),
+      id: nullableId,
+      formId: Schema.optional(planningId),
+    }).check(Schema.makeFilter((target) => target.id === null || target.formId === undefined)),
     form: Schema.Struct({ title: planningTitleText, goal: planningBody }),
   }),
   Schema.Struct({
-    target: Schema.Struct({ kind: Schema.Literal("milestone"), projectId: planningId, id: nullableId }),
+    target: Schema.Struct({
+      kind: Schema.Literal("milestone"),
+      projectId: planningId,
+      id: nullableId,
+      formId: Schema.optional(planningId),
+    }).check(Schema.makeFilter((target) => target.id === null || target.formId === undefined)),
     form: Schema.Struct({ title: planningTitleText, criteria: planningBody }),
   }),
   Schema.Struct({
-    target: Schema.Struct({ kind: Schema.Literal("ticket"), projectId: planningId, id: nullableId }),
+    target: Schema.Struct({
+      kind: Schema.Literal("ticket"),
+      projectId: planningId,
+      id: nullableId,
+      formId: Schema.optional(planningId),
+    }).check(Schema.makeFilter((target) => target.id === null || target.formId === undefined)),
     form: Schema.Struct({ ...ticketForm, title: planningTitleText }),
   }),
   Schema.Struct({

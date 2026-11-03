@@ -1,5 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { DraftInput, DraftTarget, DraftView, Page, PageRequest } from "@openbot/contracts/ipc";
+import {
+  type DraftInput,
+  type DraftView,
+  type Page,
+  type PageRequest,
+  planningDraftTargetKey,
+} from "@openbot/contracts/ipc";
 import { Schema } from "effect";
 import type { LocalPlanningOwner } from "../local-planning/local-planning-authority";
 import { planningFailure } from "../local-planning/local-planning-errors";
@@ -23,19 +29,6 @@ function draftView(row: Row): DraftView & { createdAt: string } {
     createdAt: text(row, "created_at"),
     updatedAt: text(row, "updated_at"),
   };
-}
-export function draftTargetKey(target: DraftTarget): string {
-  switch (target.kind) {
-    case "project":
-      return JSON.stringify([target.kind, target.id ?? "new"]);
-    case "milestone":
-    case "ticket":
-      return JSON.stringify([target.kind, target.projectId, target.id ?? "new"]);
-    case "review":
-      return JSON.stringify([target.kind, target.projectId, target.milestoneId]);
-    case "decision":
-      return JSON.stringify([target.kind, target.projectId, target.milestoneId, target.reviewId]);
-  }
 }
 /** Owns draft SQL and quotas in the caller's command transaction. Never imports the facade or opens BEGIN. */
 export class LocalPlanningDrafts {
@@ -87,10 +80,10 @@ export class LocalPlanningDrafts {
     if ((draftId === null) !== (expectedRevision === null)) planningFailure("invalid_input");
     let oldBytes = 0;
     let revision = 1;
-    const targetKey = draftTargetKey(input.target);
+    const targetKey = planningDraftTargetKey(input.target);
     if (draftId !== null && expectedRevision !== null) {
       const old = this.requireWindow(db, owner, draftId, expectedRevision);
-      if (draftTargetKey(old.target) !== targetKey) planningFailure("invalid_input");
+      if (planningDraftTargetKey(old.target) !== targetKey) planningFailure("invalid_input");
       if (expectedRevision === Number.MAX_SAFE_INTEGER) planningFailure("limit_reached");
       revision = expectedRevision + 1;
       oldBytes = number(

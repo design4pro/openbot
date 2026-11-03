@@ -79,3 +79,5 @@ export const ServerOnboarding = lazy(() =>
 export const RoutineFlowsCanvas = lazy(() =>
   import("./features/routine-flows/RoutineFlowsCanvas").then((module) => ({ default: module.RoutineFlowsCanvas })),
 );
+
+export const WorkPage = lazy(() => import("./features/work/WorkPage").then((module) => ({ default: module.WorkPage })));

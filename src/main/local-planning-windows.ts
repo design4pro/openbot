@@ -45,6 +45,16 @@ export class LocalPlanningWindows {
       }
     }
   }
+  /** Only the main-owned committed-navigation callback may renew this frame reference. */
+  mainNavigated(contents: PlanningRenderer): void {
+    const exposure = this.#private.get(contents);
+    if (!exposure || contents.isDestroyed() || this.#main.get(contents.id) !== contents) return;
+    const frame = contents.mainFrame;
+    if (!isTrustedRendererUrl(frame.url)) return;
+    exposure.frame = frame;
+    exposure.processId = frame.processId;
+    exposure.routingId = frame.routingId;
+  }
   requireSender(event: PlanningSender): PlanningRenderer {
     const { sender, senderFrame } = event;
     const exposure = this.#private.get(sender);

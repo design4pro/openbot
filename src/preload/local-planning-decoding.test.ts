@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   decodePlanningCommandReply,
+  decodePlanningDraftsReply,
   decodePlanningProjectReply,
   decodePlanningSessionReply,
 } from "./local-planning-decoding";
@@ -13,6 +14,27 @@ describe("private planning replies from main", () => {
     expect(decodePlanningSessionReply({ ok: true, value: session })).toEqual({ ok: true, value: session });
     expect(() => decodePlanningSessionReply({ ok: true, value: { ...session, privateEpoch: undefined } })).toThrow();
     expect(() => decodePlanningSessionReply({ ok: true, value: { ...session, principalId: id } })).toThrow();
+  });
+  it("decodes distinct new-form IDs without accepting them on an existing object", () => {
+    const draft = {
+      id,
+      windowDraftId: id,
+      revision: 1,
+      updatedAt: "2026-11-01T00:00:00.000Z",
+      target: { kind: "project", id: null, formId: id },
+      form: { title: "Draft", goal: "" },
+    };
+    expect(decodePlanningDraftsReply({ ok: true, value: { items: [draft], next: null } })).toEqual({
+      ok: true,
+      value: { items: [draft], next: null },
+    });
+    for (const target of [
+      { ...draft.target, id },
+      { ...draft.target, formId: "x".repeat(100000) },
+    ])
+      expect(() =>
+        decodePlanningDraftsReply({ ok: true, value: { items: [{ ...draft, target }], next: null } }),
+      ).toThrow();
   });
   it("does not expose malformed or cause-bearing failures", () => {
     expect(decodePlanningProjectReply({ ok: false, error: { code: "forbidden", message: "Access refused." } })).toEqual(

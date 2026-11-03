@@ -203,52 +203,58 @@ try {
   assert.equal(state.nodeIntegration, false);
   assert.ok(isString(state.profile) && state.profile.endsWith(`OpenBot Dev ${instance}`));
   cases.push("electron-sandbox");
-  await main.evaluate("require('effect').Effect.runPromise(__planningFixture.services.cuaDriver.state())");
-  const initial = unwrap(await page.evaluate(() => window.openbot.localPlanning.availability()));
-  assert.notEqual(
-    initial.reason,
-    "unavailable",
-    "Reviewed native configuration must pass production support admission.",
-  );
-  assert.ok(initial.blockers.length > 0, "The real public CUA daemon must hold its lifetime.");
-  const blocked = await page.evaluate(() => window.openbot.localPlanning.enter());
-  assert.equal(blocked.ok, false);
-  if (!blocked.ok) assert.equal(blocked.error.code, "privacy_busy");
-  for (const blocker of initial.blockers)
-    unwrap(await page.evaluate((activityId) => window.openbot.localPlanning.stopActivity({ activityId }), blocker.id));
-  assert.equal(unwrap(await page.evaluate(() => window.openbot.localPlanning.availability())).ready, true);
-  cases.push("electron-public-activity");
-  const session = unwrap(await page.evaluate(() => window.openbot.localPlanning.enter()));
-  const project = unwrap(
-    await page.evaluate(
-      (session) =>
-        window.openbot.localPlanning.run({
-          session: { generation: session.generation },
-          input: {
-            operationId: crypto.randomUUID(),
-            action: { kind: "create_project", title: "Private fixture canary", goal: "Private goal" },
-          },
-        }),
-      session,
-    ),
-  );
-  const detail = unwrap(
-    await page.evaluate(
-      ({ session, id }) =>
-        window.openbot.localPlanning.getProject({ session: { generation: session.generation }, input: id }),
-      { session, id: project.objectId },
-    ),
-  );
-  assert.equal(detail.title, "Private fixture canary");
-  cases.push("electron-local-owner");
-  if (process.argv.includes("--case=window-lifecycle")) {
-    await electronWindowLifecycleCase(main, connected.browser, page, session);
-    cases.push("electron-window-lifecycle");
+  if (process.argv.includes("--case=bootstrap")) {
+    report.basis = "electron-bootstrap";
   } else {
-    await electronPlanningCases(main, connected.browser, page, session, project.objectId, (id) => {
-      report.cases.push(id);
-      logger.info("Electron case passed.", { id });
-    });
+    await main.evaluate("require('effect').Effect.runPromise(__planningFixture.services.cuaDriver.state())");
+    const initial = unwrap(await page.evaluate(() => window.openbot.localPlanning.availability()));
+    assert.notEqual(
+      initial.reason,
+      "unavailable",
+      "Reviewed native configuration must pass production support admission.",
+    );
+    assert.ok(initial.blockers.length > 0, "The real public CUA daemon must hold its lifetime.");
+    const blocked = await page.evaluate(() => window.openbot.localPlanning.enter());
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "privacy_busy");
+    for (const blocker of initial.blockers)
+      unwrap(
+        await page.evaluate((activityId) => window.openbot.localPlanning.stopActivity({ activityId }), blocker.id),
+      );
+    assert.equal(unwrap(await page.evaluate(() => window.openbot.localPlanning.availability())).ready, true);
+    cases.push("electron-public-activity");
+    const session = unwrap(await page.evaluate(() => window.openbot.localPlanning.enter()));
+    const project = unwrap(
+      await page.evaluate(
+        (session) =>
+          window.openbot.localPlanning.run({
+            session: { generation: session.generation },
+            input: {
+              operationId: crypto.randomUUID(),
+              action: { kind: "create_project", title: "Private fixture canary", goal: "Private goal" },
+            },
+          }),
+        session,
+      ),
+    );
+    const detail = unwrap(
+      await page.evaluate(
+        ({ session, id }) =>
+          window.openbot.localPlanning.getProject({ session: { generation: session.generation }, input: id }),
+        { session, id: project.objectId },
+      ),
+    );
+    assert.equal(detail.title, "Private fixture canary");
+    cases.push("electron-local-owner");
+    if (process.argv.includes("--case=window-lifecycle")) {
+      await electronWindowLifecycleCase(main, connected.browser, page, session);
+      cases.push("electron-window-lifecycle");
+    } else {
+      await electronPlanningCases(main, connected.browser, page, session, project.objectId, (id) => {
+        report.cases.push(id);
+        logger.info("Electron case passed.", { id });
+      });
+    }
   }
   report.passed = true;
 } catch (cause) {

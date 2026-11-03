@@ -1,6 +1,6 @@
 import type { ChatWindowTarget } from "@openbot/contracts/ipc";
 import type { JSX } from "@solidjs/web";
-import { type ParentProps, Show } from "solid-js";
+import { onSettled, type ParentProps, Show } from "solid-js";
 import { AnsweredPromptsProvider } from "./answered-prompts";
 import { AppBootstrap } from "./app-bootstrap";
 import { AuthProvider } from "./features/account/account-context";
@@ -40,6 +40,8 @@ import { UpdatesProvider } from "./features/updates/updates-context";
 import { WhatsNewProvider } from "./features/updates/whats-new-context";
 import { UsageProvider } from "./features/usage/usage-context";
 import { WindowPageProvider } from "./features/window/window-page-context";
+import { useWork, WorkProvider, type WorkSelection } from "./features/work/work-context";
+import { useWorkPrivacy, WorkPrivacyDialog, WorkPrivacyProvider } from "./features/work/work-privacy-context";
 import { I18nProvider } from "./i18n-context";
 import { LayoutProvider } from "./layout";
 import { NavigationProvider } from "./navigation";
@@ -97,6 +99,7 @@ export function AppProviders(props: ParentProps<AppProps>): JSX.Element {
     !props.chatWindow,
     readStoredComposerDrafts(),
   );
+  const workSelection: WorkSelection = { scopeId: null, projectId: null };
   return (
     <PlatformProvider
       landingPreview={props.landingPreview}
@@ -127,9 +130,16 @@ export function AppProviders(props: ParentProps<AppProps>): JSX.Element {
                                               <Show when={!props.chatWindow}>
                                                 <AppBootstrap />
                                               </Show>
-                                              <ServerScopeBoundary stableConversation={stableConversation}>
-                                                {props.children}
-                                              </ServerScopeBoundary>
+                                              <WorkPrivacyProvider>
+                                                <WorkComposerBridge flush={stableConversation.flushComposerDrafts} />
+                                                <ServerScopeBoundary
+                                                  stableConversation={stableConversation}
+                                                  workSelection={workSelection}
+                                                >
+                                                  {props.children}
+                                                </ServerScopeBoundary>
+                                                <WorkPrivacyDialog />
+                                              </WorkPrivacyProvider>
                                             </AgentReadTrackingProvider>
                                           </WindowPageProvider>
                                         </UsageProvider>
@@ -159,7 +169,9 @@ function ServerScopeBoundary(props: ParentProps<ScopedConversationProps>): JSX.E
   const { activeServerId } = useServers();
   return (
     <Show keyed when={activeServerId()}>
-      <ScopedProviders stableConversation={props.stableConversation}>{props.children}</ScopedProviders>
+      <ScopedProviders stableConversation={props.stableConversation} workSelection={props.workSelection}>
+        {props.children}
+      </ScopedProviders>
     </Show>
   );
 }
@@ -172,10 +184,12 @@ function ServerScopeBoundary(props: ParentProps<ScopedConversationProps>): JSX.E
  */
 interface ScopedConversationProps {
   stableConversation: ReturnType<typeof createStableConversationState>;
+  workSelection: WorkSelection;
 }
 
 /** Everything whose lifetime is one server. See `server-scope.tsx`. */
 function ScopedProviders(props: ParentProps<ScopedConversationProps>): JSX.Element {
+  const privacy = useWorkPrivacy();
   const platform = usePlatform();
   const conversationController = { ...props.stableConversation, ...createServerConversationState() };
   return (
@@ -192,18 +206,24 @@ function ScopedProviders(props: ParentProps<ScopedConversationProps>): JSX.Eleme
                         <BrowserTabsProvider>
                           <SidebarProvider>
                             <NavigationProvider>
-                              <ServerSelectionProvider>
-                                <AgentActionsProvider>
-                                  <ServerScopeProvider>
-                                    <AgentEventBridge />
-                                    {/* The Dynamic Island follows the main window only. */}
-                                    <Show when={!platform.chatWindow}>
-                                      <DynamicIslandBridge />
-                                    </Show>
-                                    {props.children}
-                                  </ServerScopeProvider>
-                                </AgentActionsProvider>
-                              </ServerSelectionProvider>
+                              <WorkProvider
+                                selection={props.workSelection}
+                                registerFlush={privacy.register}
+                                enrolled={privacy.enrolled}
+                              >
+                                <WorkServerSelection>
+                                  <AgentActionsProvider>
+                                    <ServerScopeProvider>
+                                      <AgentEventBridge />
+                                      {/* The Dynamic Island follows the main window only. */}
+                                      <Show when={!platform.chatWindow}>
+                                        <DynamicIslandBridge />
+                                      </Show>
+                                      {props.children}
+                                    </ServerScopeProvider>
+                                  </AgentActionsProvider>
+                                </WorkServerSelection>
+                              </WorkProvider>
                             </NavigationProvider>
                           </SidebarProvider>
                         </BrowserTabsProvider>
@@ -218,4 +238,14 @@ function ScopedProviders(props: ParentProps<ScopedConversationProps>): JSX.Eleme
       </PresenceProvider>
     </ConversationControllerProvider>
   );
+}
+
+function WorkServerSelection(props: ParentProps) {
+  const work = useWork();
+  return <ServerSelectionProvider beforeScopeExit={work.beforeScopeExit}>{props.children}</ServerSelectionProvider>;
+}
+function WorkComposerBridge(props: { flush: () => boolean }) {
+  const privacy = useWorkPrivacy();
+  onSettled(() => privacy.registerComposer(() => props.flush()));
+  return null;
 }

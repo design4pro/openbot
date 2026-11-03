@@ -16,6 +16,7 @@ import type {
   ReviewView,
   TicketView,
 } from "@openbot/contracts/ipc";
+import { planningDraftTargetKey } from "@openbot/contracts/ipc";
 import { sourceText } from "@openbot/i18n/source";
 import { clone, type Listener } from "./mock-support";
 
@@ -99,6 +100,12 @@ export function createMockLocalPlanning(isLocal: () => boolean) {
       const previous = action.draftId ? required(drafts, action.draftId) : null;
       if (previous && previous.revision !== action.expectedDraftRevision) fail("revision_conflict");
       if (!previous && drafts.size >= 100) fail("limit_reached");
+      const collision = [...drafts.values()].find(
+        (draft) =>
+          draft.windowDraftId === draftWindow &&
+          planningDraftTargetKey(draft.target) === planningDraftTargetKey(action.target),
+      );
+      if (collision && collision.id !== action.draftId) fail("revision_conflict");
       const draft: DraftView = {
         ...clone(action),
         id: previous?.id ?? id,

@@ -90,17 +90,23 @@ const draftFields = { id, windowDraftId: id, revision, updatedAt: date };
 const draftSchema = z.union([
   z.strictObject({
     ...draftFields,
-    target: z.strictObject({ kind: z.literal("project"), id: id.nullable() }),
+    target: z
+      .strictObject({ kind: z.literal("project"), id: id.nullable(), formId: id.optional() })
+      .refine((target) => target.id === null || target.formId === undefined),
     form: z.strictObject({ title, goal: body }),
   }),
   z.strictObject({
     ...draftFields,
-    target: z.strictObject({ kind: z.literal("milestone"), projectId: id, id: id.nullable() }),
+    target: z
+      .strictObject({ kind: z.literal("milestone"), projectId: id, id: id.nullable(), formId: id.optional() })
+      .refine((target) => target.id === null || target.formId === undefined),
     form: z.strictObject({ title, criteria: body }),
   }),
   z.strictObject({
     ...draftFields,
-    target: z.strictObject({ kind: z.literal("ticket"), projectId: id, id: id.nullable() }),
+    target: z
+      .strictObject({ kind: z.literal("ticket"), projectId: id, id: id.nullable(), formId: id.optional() })
+      .refine((target) => target.id === null || target.formId === undefined),
     form: z.strictObject({ title, criteria: body, notes: body, milestoneId: id.nullable(), status }),
   }),
   z.strictObject({

@@ -1,3 +1,4 @@
+import { Button } from "@openbot/ui";
 import { useText } from "@openbot/ui/text";
 import { createEffect, createSignal, Loading, Show } from "solid-js";
 import { useAuth } from "./features/account/account-context";
@@ -11,6 +12,7 @@ import { useServerSelection } from "./features/servers/server-selection";
 import { useSettings } from "./features/settings/settings-context";
 import { StartupSplash } from "./features/startup/StartupSplash";
 import { WhatsNewOverlay } from "./features/updates/WhatsNewOverlay";
+import { useWindowPage } from "./features/window/window-page-context";
 import { useI18n } from "./i18n-context";
 import { AccountLogin, FirstRunFlow, InitialSetup, LanguageStep } from "./lazy-views";
 import { usePlatform } from "./platform";
@@ -41,6 +43,8 @@ function LoadingScreen() {
  */
 export function AppAccessGate() {
   const platform = usePlatform();
+  const windowPage = useWindowPage();
+  const { t } = useText();
   const i18n = useI18n();
   const auth = useAuth();
   const setup = useSetup();
@@ -71,87 +75,109 @@ export function AppAccessGate() {
 
   return (
     <>
+      <Show
+        when={
+          started() &&
+          !splashShown() &&
+          !platform.chatWindow &&
+          windowPage.page() !== "work" &&
+          (!auth.visibleSignedInAccount() || !setup.setupState()?.completed)
+        }
+      >
+        <Button class="work-local-entry" onClick={() => windowPage.openWork()}>
+          {t("work.openLocal")}
+        </Button>
+      </Show>
       <Show when={started()}>
         <Show
-          when={auth.visibleSignedInAccount()}
-          fallback={
-            <Loading fallback={<LoadingScreen />}>
-              <Show
-                when={languageStepShown()}
-                fallback={
-                  <AccountLogin
-                    variant={platform.appInfo()?.variant ?? "production"}
-                    state={auth.centralAuth()}
-                    onRetry={auth.retryCentralAccount}
-                    onRequestEmailCode={auth.requestEmailCode}
-                    onVerifyEmailCode={auth.verifyEmailCode}
-                    onReset={auth.logoutCentralAccount}
-                    language={i18n.locale()}
-                    onChangeLanguage={languageStep.reopen}
-                  />
-                }
-              >
-                <LanguageStep
-                  variant={platform.appInfo()?.variant ?? "production"}
-                  reopened={languageStep.reopened()}
-                  onDone={languageStep.complete}
-                />
-              </Show>
-            </Loading>
-          }
+          when={windowPage.page() !== "work" || !!platform.chatWindow}
+          fallback={<WorkspaceShell account={auth.visibleSignedInAccount} />}
         >
-          {(account) => (
-            <Show
-              when={setup.setupState()?.completed}
-              fallback={
-                <Show when={scope.connection.hasContent} fallback={<WorkspaceShell account={account} />}>
-                  <Show when={!setup.setupReadFailed()} fallback={<SetupReadError />}>
-                    <Show
-                      when={setup.pendingInviteUrl().trim()}
-                      fallback={
+          <Show
+            when={auth.visibleSignedInAccount()}
+            fallback={
+              <Loading fallback={<LoadingScreen />}>
+                <Show
+                  when={languageStepShown()}
+                  fallback={
+                    <AccountLogin
+                      variant={platform.appInfo()?.variant ?? "production"}
+                      state={auth.centralAuth()}
+                      onRetry={auth.retryCentralAccount}
+                      onRequestEmailCode={auth.requestEmailCode}
+                      onVerifyEmailCode={auth.verifyEmailCode}
+                      onReset={auth.logoutCentralAccount}
+                      language={i18n.locale()}
+                      onChangeLanguage={languageStep.reopen}
+                    />
+                  }
+                >
+                  <LanguageStep
+                    variant={platform.appInfo()?.variant ?? "production"}
+                    reopened={languageStep.reopened()}
+                    onDone={languageStep.complete}
+                  />
+                </Show>
+              </Loading>
+            }
+          >
+            {(account) => (
+              <Show
+                when={setup.setupState()?.completed}
+                fallback={
+                  <Show when={scope.connection.hasContent} fallback={<WorkspaceShell account={account} />}>
+                    <Show when={!setup.setupReadFailed()} fallback={<SetupReadError />}>
+                      <Show
+                        when={setup.pendingInviteUrl().trim()}
+                        fallback={
+                          <Loading fallback={<LoadingScreen />}>
+                            <FirstRunFlow
+                              {...setupProviders}
+                              state={
+                                setup.setupState() ?? {
+                                  completed: false,
+                                  preferredProvider: null,
+                                  preferredModel: null,
+                                }
+                              }
+                              platform={platform.appInfo()?.platform ?? "darwin"}
+                              onSave={setup.saveSetup}
+                              onAnalyticsChoice={(enabled, chosen) =>
+                                settings.updateGeneralSettings(
+                                  { ...settings.generalSettings(), productAnalytics: enabled },
+                                  { analyticsChosen: chosen },
+                                )
+                              }
+                              onProviderStepShown={detection.scanOnce}
+                              logoVariant={platform.appInfo()?.variant ?? "production"}
+                            />
+                          </Loading>
+                        }
+                      >
                         <Loading fallback={<LoadingScreen />}>
-                          <FirstRunFlow
+                          <InitialSetup
                             {...setupProviders}
                             state={
                               setup.setupState() ?? { completed: false, preferredProvider: null, preferredModel: null }
                             }
                             platform={platform.appInfo()?.platform ?? "darwin"}
+                            accountEmail={account().email}
+                            inviteUrl={setup.pendingInviteUrl()}
                             onSave={setup.saveSetup}
-                            onAnalyticsChoice={(enabled, chosen) =>
-                              settings.updateGeneralSettings(
-                                { ...settings.generalSettings(), productAnalytics: enabled },
-                                { analyticsChosen: chosen },
-                              )
-                            }
-                            onProviderStepShown={detection.scanOnce}
-                            logoVariant={platform.appInfo()?.variant ?? "production"}
+                            onPreviewInvite={setup.previewInvite}
+                            onJoinRemote={joinRemoteDuringSetup}
+                            onLogout={auth.logoutCentralAccount}
                           />
                         </Loading>
-                      }
-                    >
-                      <Loading fallback={<LoadingScreen />}>
-                        <InitialSetup
-                          {...setupProviders}
-                          state={
-                            setup.setupState() ?? { completed: false, preferredProvider: null, preferredModel: null }
-                          }
-                          platform={platform.appInfo()?.platform ?? "darwin"}
-                          accountEmail={account().email}
-                          inviteUrl={setup.pendingInviteUrl()}
-                          onSave={setup.saveSetup}
-                          onPreviewInvite={setup.previewInvite}
-                          onJoinRemote={joinRemoteDuringSetup}
-                          onLogout={auth.logoutCentralAccount}
-                        />
-                      </Loading>
+                      </Show>
                     </Show>
                   </Show>
-                </Show>
-              }
-            >
-              <WorkspaceShell account={account} />
-            </Show>
-          )}
+                }
+              >
+                <WorkspaceShell account={account} />
+              </Show>
+            )}
+          </Show>
         </Show>
       </Show>
       <WhatsNewOverlay

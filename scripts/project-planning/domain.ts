@@ -162,6 +162,23 @@ export async function domainCases(root: string): Promise<string[]> {
       "invalid_input",
     );
     cases.push("unicode-limit");
+    const formIds = [randomUUID(), randomUUID()];
+    const formDrafts = [];
+    for (const formId of formIds) {
+      formDrafts.push(
+        await run({
+          kind: "save_draft",
+          draftId: null,
+          expectedDraftRevision: null,
+          target: { kind: "project", id: null, formId },
+          form: { title: `Create form ${formId}`, goal: "" },
+        }),
+      );
+    }
+    assert.notEqual(formDrafts[0]?.objectId, formDrafts[1]?.objectId);
+    for (const saved of formDrafts)
+      await run({ kind: "discard_draft", draftId: saved.objectId, expectedDraftRevision: saved.revision });
+    cases.push("distinct-create-form-drafts");
     const draft = await run({
       kind: "save_draft",
       draftId: null,

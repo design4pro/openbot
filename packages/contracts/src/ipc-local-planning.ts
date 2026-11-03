@@ -91,8 +91,9 @@ export interface DecisionView {
   createdAt: string;
 }
 export type DraftTarget =
-  | { kind: "project"; id: string | null }
-  | { kind: "milestone" | "ticket"; projectId: string; id: string | null }
+  | { kind: "project"; id: string | null; formId?: string }
+  | { kind: "milestone"; projectId: string; id: string | null; formId?: string }
+  | { kind: "ticket"; projectId: string; id: string | null; formId?: string }
   | { kind: "review"; projectId: string; milestoneId: string }
   | { kind: "decision"; projectId: string; milestoneId: string; reviewId: string };
 export type ProjectForm = { title: string; goal: string };
@@ -105,9 +106,9 @@ export type TicketForm = {
   status: TicketStatus;
 };
 export type DraftInput =
-  | { target: { kind: "project"; id: string | null }; form: ProjectForm }
-  | { target: { kind: "milestone"; projectId: string; id: string | null }; form: MilestoneForm }
-  | { target: { kind: "ticket"; projectId: string; id: string | null }; form: TicketForm }
+  | { target: { kind: "project"; id: string | null; formId?: string }; form: ProjectForm }
+  | { target: { kind: "milestone"; projectId: string; id: string | null; formId?: string }; form: MilestoneForm }
+  | { target: { kind: "ticket"; projectId: string; id: string | null; formId?: string }; form: TicketForm }
   | { target: { kind: "review"; projectId: string; milestoneId: string }; form: { evidenceNote: string } }
   | {
       target: { kind: "decision"; projectId: string; milestoneId: string; reviewId: string };
@@ -152,3 +153,27 @@ export type PlanningAvailability = {
 };
 export type PlanningPrepareExit = { privateEpoch: string; exitId: string };
 export type PlanningExitConfirmation = PlanningPrepareExit & { outcome: "saved" | "discarded" | "blocked" };
+
+/** A content key, never caller authority. Legacy targets keep their exact persisted key. */
+export function planningDraftTargetKey(target: DraftTarget): string {
+  switch (target.kind) {
+    case "project":
+      return JSON.stringify([
+        target.kind,
+        target.id ?? "new",
+        ...(target.id === null && target.formId ? [target.formId] : []),
+      ]);
+    case "milestone":
+    case "ticket":
+      return JSON.stringify([
+        target.kind,
+        target.projectId,
+        target.id ?? "new",
+        ...(target.id === null && target.formId ? [target.formId] : []),
+      ]);
+    case "review":
+      return JSON.stringify([target.kind, target.projectId, target.milestoneId]);
+    case "decision":
+      return JSON.stringify([target.kind, target.projectId, target.milestoneId, target.reviewId]);
+  }
+}

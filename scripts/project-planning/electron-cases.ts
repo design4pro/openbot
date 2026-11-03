@@ -14,7 +14,7 @@ const properties = z.object({
     z.object({ name: z.string(), value: z.object({ objectId: z.string().optional() }).optional() }),
   ),
 });
-async function exposePrivate(
+export async function exposePrivate(
   main: InspectorClient,
   expression: string,
   field: string,

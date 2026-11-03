@@ -38,17 +38,23 @@ const action = z.union([
   }),
   z.strictObject({
     ...draftFields,
-    target: z.strictObject({ kind: z.literal("project"), id: id.nullable() }),
+    target: z
+      .strictObject({ kind: z.literal("project"), id: id.nullable(), formId: id.optional() })
+      .refine((target) => target.id === null || target.formId === undefined),
     form: z.strictObject(projectForm),
   }),
   z.strictObject({
     ...draftFields,
-    target: z.strictObject({ kind: z.literal("milestone"), projectId: id, id: id.nullable() }),
+    target: z
+      .strictObject({ kind: z.literal("milestone"), projectId: id, id: id.nullable(), formId: id.optional() })
+      .refine((target) => target.id === null || target.formId === undefined),
     form: z.strictObject(milestoneForm),
   }),
   z.strictObject({
     ...draftFields,
-    target: z.strictObject({ kind: z.literal("ticket"), projectId: id, id: id.nullable() }),
+    target: z
+      .strictObject({ kind: z.literal("ticket"), projectId: id, id: id.nullable(), formId: id.optional() })
+      .refine((target) => target.id === null || target.formId === undefined),
     form: z.strictObject(ticketForm),
   }),
   z.strictObject({

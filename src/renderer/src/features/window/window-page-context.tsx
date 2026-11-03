@@ -10,6 +10,7 @@ import { useUsage } from "../usage/usage-context";
 export type WindowPage =
   | "agents"
   | "tasks"
+  | "work"
   | "schedule"
   | "workflows"
   | "usage"
@@ -52,7 +53,9 @@ const context = createSimpleContext({
     /** The elements of the settings page that the settings panel shows in. The page sets them. */
     const [settingsMounts, setSettingsMounts] = createSignal<{ nav: HTMLElement; content: HTMLElement } | undefined>();
 
+    const [workOpen, setWorkOpen] = createSignal(false);
     const page = createMemo<WindowPage>(() => {
+      if (workOpen()) return "work";
       if (serverSettings.serverSettingsOpen()) return "server-settings";
       if (settings.appSettingsOpen()) return "settings";
       if (settings.skillsMarketplaceOpen()) return "marketplace";
@@ -68,6 +71,7 @@ const context = createSimpleContext({
     // Opening the user settings closes the server settings, the Marketplace and the host pane.
     createEffect(settings.appSettingsOpenRequest, (request, previous) => {
       if (previous === undefined || request === previous) return;
+      setWorkOpen(false);
       usage.dismissUsage();
       if (untrack(settings.skillsMarketplaceOpen)) settings.setSkillsMarketplaceOpen(false);
       if (untrack(serverSettings.serverSettingsOpen)) serverSettings.setServerSettingsOpen(false);
@@ -76,6 +80,7 @@ const context = createSimpleContext({
     // Opening the server settings closes the user settings, the Marketplace and the host pane.
     createEffect(serverSettings.serverSettingsOpenRequest, (request, previous) => {
       if (previous === undefined || request === previous) return;
+      setWorkOpen(false);
       usage.dismissUsage();
       if (untrack(settings.skillsMarketplaceOpen)) settings.setSkillsMarketplaceOpen(false);
       if (untrack(settings.appSettingsOpen)) settings.setAppSettingsOpen(false);
@@ -86,6 +91,7 @@ const context = createSimpleContext({
       () => usage.state.serverId,
       (serverId) => {
         if (!serverId) return;
+        setWorkOpen(false);
         if (untrack(settings.appSettingsOpen)) settings.setAppSettingsOpen(false);
         if (untrack(serverSettings.serverSettingsOpen)) serverSettings.setServerSettingsOpen(false);
         if (untrack(settings.skillsMarketplaceOpen)) settings.setSkillsMarketplaceOpen(false);
@@ -95,6 +101,7 @@ const context = createSimpleContext({
     // Opening the Marketplace closes the settings pages and the host pane.
     createEffect(settings.skillsMarketplaceOpen, (open) => {
       if (!open) return;
+      setWorkOpen(false);
       usage.dismissUsage();
       if (untrack(settings.appSettingsOpen)) settings.setAppSettingsOpen(false);
       if (untrack(serverSettings.serverSettingsOpen)) serverSettings.setServerSettingsOpen(false);
@@ -127,25 +134,38 @@ const context = createSimpleContext({
         settings.setAppSettingsOpen(false);
         serverSettings.setServerSettingsOpen(false);
         settings.setSkillsMarketplaceOpen(false);
+        setWorkOpen(false);
         usage.dismissUsage();
       },
+      openWork() {
+        settings.setAppSettingsOpen(false);
+        serverSettings.setServerSettingsOpen(false);
+        settings.setSkillsMarketplaceOpen(false);
+        usage.dismissUsage();
+        setWorkOpen(true);
+      },
       openTasks(source: HTMLElement | null) {
+        setWorkOpen(false);
         const serverId = activeServerId();
         if (serverId) usage.openTasks(serverId, source);
       },
       openSchedule(source: HTMLElement | null) {
+        setWorkOpen(false);
         const serverId = activeServerId();
         if (serverId) usage.openSchedule(serverId, source);
       },
       openWorkflows(source: HTMLElement | null) {
+        setWorkOpen(false);
         const serverId = activeServerId();
         if (serverId) usage.openWorkflows(serverId, source);
       },
       openUsage(source: HTMLElement | null) {
+        setWorkOpen(false);
         const serverId = activeServerId();
         if (serverId) usage.openUsage(serverId, source);
       },
       openSettings(source: HTMLElement | null) {
+        setWorkOpen(false);
         settings.openAppSettings(source);
       },
     };

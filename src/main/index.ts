@@ -441,8 +441,9 @@ const windows = createMainWindowController({
   keepRunningInBackground: () => services?.appBehavior.keepRunningInBackground ?? false,
   getServices: () => services,
   getTranslate: () => services?.language.translate ?? translateFor(resolveLocale("system", app.getLocale())),
-  onRendererLoadStarted: () => {
+  onRendererLoadStarted: (contents) => {
     services?.localPlanning.invalidateScopes();
+    services?.localPlanningWindows.mainNavigated(contents);
     deepLinkReceiverReady = false;
     filePreviewPages.clear();
   },

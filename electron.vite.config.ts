@@ -54,7 +54,10 @@ export default defineConfig({
   renderer: {
     plugins: [solidPlugin(), tailwindcss({ optimize: false })],
     optimizeDeps: {
-      include: ["@norbert_bodziony/bloub"],
+      // Linked catalog sources must be fresh after a development restart.
+      force: true,
+      // The desktop includes all catalogs. Prebundle them instead of fetching over a thousand source modules.
+      include: ["@norbert_bodziony/bloub", "@openbot/i18n", "@openbot/i18n/source", "@openbot/i18n/format"],
     },
     resolve: {
       dedupe: ["solid-js", "@solidjs/web"],

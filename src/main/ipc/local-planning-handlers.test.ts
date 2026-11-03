@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { LocalPlanningWindows } from "../local-planning-windows";
 import { RemoteServerStore } from "../remote-server-store";
+import { parsePlanningRun } from "./local-planning-inputs";
 
 function renderer(id: number) {
   const state = { destroyed: false };
@@ -25,6 +26,30 @@ function registry() {
 const registered: Array<ReturnType<typeof renderer>> = [];
 
 describe("local planning sender and private renderer boundary", () => {
+  it("bounds create-form discriminators and rejects them on an existing-object draft", () => {
+    const id = "98f1c8ad-1d80-4b8b-8b26-04bdfb99e49a";
+    const payload = {
+      session: { generation: id },
+      input: {
+        operationId: id,
+        action: {
+          kind: "save_draft",
+          draftId: null,
+          expectedDraftRevision: null,
+          target: { kind: "project", id: null, formId: id },
+          form: { title: "Draft", goal: "" },
+        },
+      },
+    };
+    expect(parsePlanningRun(payload)).toEqual(payload);
+    for (const target of [
+      { ...payload.input.action.target, id },
+      { ...payload.input.action.target, formId: "x".repeat(100000) },
+    ])
+      expect(() =>
+        parsePlanningRun({ ...payload, input: { ...payload.input, action: { ...payload.input.action, target } } }),
+      ).toThrow();
+  });
   it("withdraws an observed destroyed renderer without reading destroyed native properties", () => {
     const windows = registry();
     const main = renderer(901);
@@ -36,6 +61,7 @@ describe("local planning sender and private renderer boundary", () => {
         throw new Error("Object has been destroyed");
       },
     });
+    expect(() => windows.mainNavigated(main.contents)).not.toThrow();
     expect(() => windows.unregisterMain(main.contents)).not.toThrow();
     expect(windows.privateRenderersDestroyed()).toBe(true);
   });
@@ -72,6 +98,36 @@ describe("local planning sender and private renderer boundary", () => {
     windows.registerMain(main.contents);
     windows.enroll(main.contents, "epoch-one");
     main.contents.mainFrame = { ...main.contents.mainFrame, processId: 500 };
+    expect(() => windows.requireSender(main.event())).toThrow();
+    expect(windows.privateRenderersDestroyed()).toBe(false);
+  });
+  it("renews only a main-observed trusted document while retaining private exclusion", async () => {
+    const windows = registry();
+    const main = renderer(904);
+    registered.push(main);
+    windows.registerMain(main.contents);
+    windows.enroll(main.contents, "reload-epoch");
+    const oldFrame = main.contents.mainFrame;
+    main.contents.mainFrame = { ...oldFrame, processId: 1904, routingId: 2904 };
+    expect(() => windows.requireSender(main.event())).toThrow();
+    windows.mainNavigated(main.contents);
+    expect(windows.requireSender(main.event())).toBe(main.contents);
+    expect(() => windows.requireSender({ sender: main.contents, senderFrame: oldFrame })).toThrow();
+    expect(windows.privateRenderersDestroyed()).toBe(false);
+    await windows.destroyPrivate("reload-epoch");
+    expect(main.state.destroyed).toBe(true);
+  });
+  it("does not renew an unregistered, destroyed or untrusted document", () => {
+    const windows = registry();
+    const main = renderer(905);
+    windows.registerMain(main.contents);
+    windows.enroll(main.contents, "reload-refusal");
+    main.contents.mainFrame = { ...main.contents.mainFrame, url: "https://example.test/" };
+    windows.mainNavigated(main.contents);
+    expect(() => windows.requireSender(main.event())).toThrow();
+    main.contents.mainFrame.url = "openbot-app://app/index.html";
+    windows.unregisterMain(main.contents);
+    windows.mainNavigated(main.contents);
     expect(() => windows.requireSender(main.event())).toThrow();
     expect(windows.privateRenderersDestroyed()).toBe(false);
   });

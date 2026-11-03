@@ -71,6 +71,7 @@ export function WorkspacePageRail(props: { hidden: boolean }) {
       onPinChange={layout.setRailPinned}
       usageRows={usageRows()}
       customAgentUsage={localAgentUsage()}
+      onWork={() => windowPage.openWork()}
       onAgents={() => showSidebarView("agents")}
       onRoutines={() => showSidebarView("routines")}
       // A joined server without workflows shows its notice on the page.
