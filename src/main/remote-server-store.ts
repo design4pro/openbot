@@ -87,10 +87,12 @@ export class RemoteServerStore implements RemoteServerDirectory {
   #state: StoredRemoteServers = emptyStoredRemoteServers();
   #writes = Semaphore.makeUnsafe(1);
   #activeServerRevision = 0;
+  readonly #onSelectionStarted: () => void;
 
-  constructor(options: { path: string; cipher: TokenCipher }) {
+  constructor(options: { path: string; cipher: TokenCipher; onSelectionStarted?: () => void }) {
     this.#path = options.path;
     this.#cipher = options.cipher;
+    this.#onSelectionStarted = options.onSelectionStarted ?? (() => undefined);
   }
 
   // A missing file is a first run. So is a file that a power loss left without content: it holds no
@@ -192,6 +194,7 @@ export class RemoteServerStore implements RemoteServerDirectory {
 
   // The one mutation that does not write. See the file header.
   setActiveServerId(serverId: string): number {
+    this.#onSelectionStarted();
     // The user picking a server is the only thing that supersedes a selection this build could not
     // read. Until then the file keeps naming it, so a build that can read it finds them still there.
     this.#state.unreadableActiveServerId = null;
@@ -203,6 +206,7 @@ export class RemoteServerStore implements RemoteServerDirectory {
   // Puts back a selection whose write failed, both halves of it. Bumps the revision like any other
   // selection, so a rollback that lost a race to a newer one is still detectable.
   restoreSelection(selection: ActiveSelection): number {
+    this.#onSelectionStarted();
     this.#state.activeServerId = selection.activeServerId;
     this.#state.unreadableActiveServerId = selection.unreadableActiveServerId;
     this.#activeServerRevision += 1;

@@ -252,7 +252,7 @@ export class LocalPlanningCommands {
       return;
     }
     if (action.kind === "discard_draft") {
-      drafts.requireWindow(db, owner, action.draftId, action.expectedDraftRevision);
+      drafts.requireRevision(db, owner, action.draftId, action.expectedDraftRevision);
       return;
     }
     const project = records.project(owner, action.projectId);

@@ -8,6 +8,8 @@ import { AgentApiKeys } from "../backend/agent-api-keys";
 import { AgentDatabaseSupervisor } from "../backend/agent-data/agent-database-supervisor";
 import { AgentTables } from "../backend/agent-data/agent-tables";
 import { AgentRoutineStore } from "../backend/agent-routine-store";
+import { LocalPlanningAuthority } from "../backend/local-planning/local-planning-authority";
+import { LocalPlanningService } from "../backend/local-planning/local-planning-service";
 import { DiscordConnectFailed, toDiscordConnectFailed } from "../backend/messaging/discord/discord-connect";
 import { SlackConnectFailed, toSlackConnectFailed } from "../backend/messaging/slack/slack-connect";
 import { routineFlowRoutines } from "../backend/routine-flows/routine-flow-routines";
@@ -35,6 +37,8 @@ import {
   HostedUpdateAdapter,
 } from "./hosted-update-adapter";
 import { LicenseDesktopService } from "./license-service";
+import { LocalPlanningMainService } from "./local-planning-service";
+import { LocalPlanningWindows } from "./local-planning-windows";
 import { LocalSignInWindows } from "./local-sign-in-window";
 import { LocalSkillLibrary } from "./local-skill-library";
 import { localSkillTools } from "./local-skill-tools";
@@ -527,6 +531,9 @@ export interface ApplicationServiceContext {
 
 /** Everything the entry point wires up, registers IPC handlers against, and shuts down. */
 export interface ApplicationServices {
+  bindMainWindow(window: BrowserWindow): void;
+  localPlanning: LocalPlanningMainService;
+  localPlanningWindows: LocalPlanningWindows;
   service: AgentService;
   routineFlows: RoutineFlowsHandle;
   workflows: WorkflowsHandle;
@@ -1007,14 +1014,22 @@ export async function createApplicationServices({
     profileTimer = setInterval(() => void refreshAccountProfile(), REMOTE_ACCOUNT_CHECK_INTERVAL_MS);
     profileTimer.unref();
   };
-  if (mainWindow.isFocused()) startProfileTimer();
-  mainWindow.on("focus", startProfileTimer);
-  mainWindow.on("blur", stopProfileTimer);
+  let profileWindow = mainWindow;
+  function bindProfileWindow(window: BrowserWindow): void {
+    profileWindow.removeListener("focus", startProfileTimer);
+    profileWindow.removeListener("blur", stopProfileTimer);
+    stopProfileTimer();
+    profileWindow = window;
+    if (profileWindow.isFocused()) startProfileTimer();
+    profileWindow.on("focus", startProfileTimer);
+    profileWindow.on("blur", stopProfileTimer);
+  }
+  bindProfileWindow(mainWindow);
   teardown.push(TEARDOWN_ORDER.updater, "account profile refresh", () => {
     profileRefreshActive = false;
     stopProfileTimer();
-    mainWindow.removeListener("focus", startProfileTimer);
-    mainWindow.removeListener("blur", stopProfileTimer);
+    profileWindow.removeListener("focus", startProfileTimer);
+    profileWindow.removeListener("blur", stopProfileTimer);
     centralAuth.stopProfileRefresh();
   });
   // Before the agents load, so the first check of an agent that follows a default reads the saved one.
@@ -1022,7 +1037,7 @@ export async function createApplicationServices({
     join(app.getPath("userData"), AGENT_DEFAULTS_PREFERENCE_FILE),
   );
   await runCauseEffect(agentDefaults.load());
-  // Closed until native ownership and private-window lifecycle adapters are installed.
+  const localPlanningWindows = new LocalPlanningWindows({ replace: windows.replacePrivateRenderers });
   const privatePlanningAdmission = new PrivatePlanningAdmission({
     checkQuiescent: () =>
       Effect.gen(function* () {
@@ -1030,7 +1045,7 @@ export async function createApplicationServices({
           return yield* new PrivatePlanningError({ code: "privacy_busy" });
         yield* privatePlanningNative.checkQuiescent();
       }),
-    privateRenderersDestroyed: () => false,
+    privateRenderersDestroyed: () => localPlanningWindows.privateRenderersDestroyed(),
   });
   const privatePlanningNative = new PrivatePlanningNative({
     admission: privatePlanningAdmission,
@@ -1146,9 +1161,7 @@ export async function createApplicationServices({
   await runCauseEffect(browser.restore(store.list().map((agent) => ({ id: agent.id, threadId: agent.threadId }))));
   performance.mark("openbot:services.browser");
   const browserPictureInPicture = new BrowserPictureInPicture({
-    // A value, deliberately: the window this is docked to is the one that exists now. The event
-    // callback below is the opposite case and re-reads, because it fires long after a macOS window
-    // close and rebuild would have made this reference stale.
+    // Rebound together with the browser when private exit recreates the main window.
     mainWindow,
     browser,
     preloadPath: join(__dirname, "../preload/index.cjs"),
@@ -1163,7 +1176,7 @@ export async function createApplicationServices({
   teardown.push(TEARDOWN_ORDER.browserPictureInPicture, "picture in picture", () => browserPictureInPicture.destroy());
   const localSignIn = new LocalSignInWindows();
   teardown.push(TEARDOWN_ORDER.localSignIn, "the local sign-in window", () => Effect.runPromise(localSignIn.discard()));
-  // A value, as for Picture in Picture: the overlay is a view in the window that the browser shows its pages in.
+  // The dock and its sender role follow the browser parent on main-window replacement.
   const browserDock = new BrowserDockOverlay({
     mainWindow,
     preloadPath: join(__dirname, "../preload/index.cjs"),
@@ -2836,6 +2849,28 @@ export async function createApplicationServices({
       }),
     },
   );
+  const localPlanningAuthority = new LocalPlanningAuthority(store.database.localIdentity);
+  const localPlanning = new LocalPlanningMainService({
+    authority: localPlanningAuthority,
+    domain: new LocalPlanningService({
+      authority: localPlanningAuthority,
+      records: store.database.localPlanningRecords,
+      drafts: store.database.localPlanningDrafts,
+    }),
+    windows: localPlanningWindows,
+    admission: privatePlanningAdmission,
+    native: privatePlanningNative,
+    isLocal: () => remoteServers.activeServerId === LOCAL_SERVER_ID,
+    supported: () => privatePlanningSupported(cuaDriver.executablePath(), remoteDesktopRuntime),
+    prepareExit: (contents, value) => {
+      const window = BrowserWindow.getAllWindows().find((window) => window.webContents === contents);
+      sendToRenderer(window, IPC_ENDPOINTS.localPlanning.prepareExit, value);
+    },
+    changed: (contents, value) => {
+      const window = BrowserWindow.getAllWindows().find((window) => window.webContents === contents);
+      sendToRenderer(window, IPC_ENDPOINTS.localPlanning.changed, value);
+    },
+  });
   // A server joined or revoked on another device of this account. Signal carries it to every socket
   // the account holds, so the phone's join reaches this computer in the second it happens rather
   // than at the next account check. The refresh itself belongs to the entry point, which owns the
@@ -3274,6 +3309,14 @@ export async function createApplicationServices({
   );
 
   return {
+    bindMainWindow: (window) => {
+      bindProfileWindow(window);
+      browser.setMainWindow(window);
+      browserDock.setMainWindow(window);
+      browserPictureInPicture.setMainWindow(window);
+    },
+    localPlanning,
+    localPlanningWindows,
     service,
     routineFlows: routineFlowRuntime,
     workflows: workflowRuntime,

@@ -66,8 +66,12 @@ export class LocalPlanningDrafts {
     );
   }
   requireWindow(db: DatabaseSync, owner: LocalPlanningOwner, id: string, revision: number): DraftView {
-    const view = this.get(db, owner, id);
+    const view = this.requireRevision(db, owner, id, revision);
     if (view.windowDraftId !== owner.windowDraftId) planningFailure("forbidden");
+    return view;
+  }
+  requireRevision(db: DatabaseSync, owner: LocalPlanningOwner, id: string, revision: number): DraftView {
+    const view = this.get(db, owner, id);
     if (view.revision !== revision) planningFailure("revision_conflict");
     return view;
   }
@@ -140,7 +144,7 @@ export class LocalPlanningDrafts {
     return { id, revision };
   }
   discard(db: DatabaseSync, owner: LocalPlanningOwner, id: string, revision: number): void {
-    this.requireWindow(db, owner, id, revision);
+    this.requireRevision(db, owner, id, revision);
     db.prepare("DELETE FROM local_project_drafts WHERE draft_id=? AND principal_id=? AND local_scope_id=?").run(
       id,
       owner.principalId,

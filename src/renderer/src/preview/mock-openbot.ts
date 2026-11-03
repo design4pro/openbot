@@ -198,6 +198,7 @@ import { createMockHostTimezone } from "./mock-host-timezone";
 import { createMockHostUpdate, type MockHostUpdateOptions } from "./mock-host-update";
 import { createMockHostedServers } from "./mock-hosted-servers";
 import { createMockLicense } from "./mock-license";
+import { createMockLocalPlanning } from "./mock-local-planning";
 import { createMockMessaging } from "./mock-messaging";
 import { createMockOnePasswordConnector } from "./mock-onepassword-connector";
 import { createMockProviderRuntimes, type MockProviderRuntimeOptions } from "./mock-provider-runtimes";
@@ -1073,6 +1074,7 @@ export function createMockOpenBot(options: MockOpenBotOptions = {}): MockOpenBot
   const { installedSkills, readInstalledSkills } = mockSkills;
   const mockBrowser = createMockBrowser(options, runtime, emitAgentEvent);
   const mockTeam = createMockTeam(options, runtime, emitAgentEvent, () => agents);
+  const mockPlanning = createMockLocalPlanning(() => mockTeam.activeServerId() === LOCAL_SERVER_ID);
   const mockEvents = createMockEvents(({ owner, routineId, limit = 10 }) =>
     owner.kind === "agent"
       ? Promise.resolve(clone((routineRuns.get(routineId) ?? []).slice(0, limit)))
@@ -1390,6 +1392,7 @@ export function createMockOpenBot(options: MockOpenBotOptions = {}): MockOpenBot
     }),
     providerRuntimes: mockProviderRuntimes.providerRuntimes,
     openUrl: async () => undefined,
+    localPlanning: mockPlanning.api,
     voice: mockVoice.voice,
     routineFlows: mockRoutineFlows(
       { routines, routineRuns, links: options.routineFlowLinks, steps: options.routineFlowSteps },
@@ -3101,7 +3104,13 @@ export function createMockOpenBot(options: MockOpenBotOptions = {}): MockOpenBot
       exportData: async () => ({ saved: true }),
       exportDiagnostics: async () => ({ saved: true }),
     },
-    servers: mockTeam.servers,
+    servers: {
+      ...mockTeam.servers,
+      select: (serverId) => {
+        mockPlanning.selectionStarted();
+        return mockTeam.servers.select(serverId);
+      },
+    },
     localServers: mockTeam.localServers,
     plugins: {
       // The preview is never opened by a link, so there is nothing pending and nothing to push.

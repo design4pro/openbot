@@ -37,7 +37,7 @@ export default defineConfig({
     },
   },
   preload: {
-    plugins: [externalizeDepsPlugin({ exclude: ["@openbot/contracts"] })],
+    plugins: [externalizeDepsPlugin({ exclude: ["@openbot/contracts", "zod"] })],
     build: {
       rollupOptions: {
         input: {

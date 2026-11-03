@@ -142,3 +142,13 @@ export type PlanningCommand = {
   consumedDraft?: { id: string; revision: number };
 };
 export type PlanningCommandResult = { objectId: string; revision: number; projectId: string | null };
+
+export type PlanningRequest<T> = { session: PlanningSessionRef; input: T };
+export type PlanningAvailability = {
+  ready: boolean;
+  reason: PlanningErrorCode | null;
+  blockers: NativeBlocker[];
+  privateEpoch: string | null;
+};
+export type PlanningPrepareExit = { privateEpoch: string; exitId: string };
+export type PlanningExitConfirmation = PlanningPrepareExit & { outcome: "saved" | "discarded" | "blocked" };

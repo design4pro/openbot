@@ -15,7 +15,21 @@ interface TestedNativeConfiguration {
   remoteDigests: { sunshine: string; moonlightWebServer: string; moonlightStreamer: string };
 }
 // Entries require reviewed native and Electron evidence for this exact configuration. Reports are never loaded here.
-const TESTED_NATIVE_CONFIGURATIONS: readonly TestedNativeConfiguration[] = [];
+const TESTED_NATIVE_CONFIGURATIONS: readonly TestedNativeConfiguration[] = [
+  {
+    platform: "linux",
+    architecture: "x64",
+    osMajor: "24",
+    kernelRelease: "7.2.12-orbstack-00394-gbecdd6130068",
+    displayBackend: "x11-xvfb",
+    driverDigest: "5fa60c7ab35194e0e050a337521ca0e0b0ae0a8fe898813b340f65c94e15264c",
+    remoteDigests: {
+      sunshine: "29ff4dbd7c0700ffd6d1ddf005f9e28bb063b54dcfefd80a030dc50f84a000a3",
+      moonlightWebServer: "f5033d624d88d434f3b4ee33222071f33076632efa258ceab35cd5412b43e16a",
+      moonlightStreamer: "029e779646b4d022d325e55b4864f238a82b81b3f9037fe576c8e33cd29ff898",
+    },
+  },
+];
 
 /** Main-only platform gate. An environment flag, report path or renderer capability cannot enable it. */
 export const privatePlanningSupported = Effect.fn("PrivatePlanningSupport.available")(function* (

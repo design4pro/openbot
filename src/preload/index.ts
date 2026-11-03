@@ -236,6 +236,7 @@ import {
   decodeDynamicIslandPresentation,
 } from "./dynamic-island-decoding";
 import { decodeHostReleaseStatusFromMain } from "./host-release-decoding";
+import * as planning from "./local-planning-decoding";
 import { decodeMacAutomationResults } from "./mac-automation-decoding";
 import {
   decodeAddOrchestratorReply,
@@ -781,6 +782,23 @@ const openbotApi: OpenBotDesktopApi = {
     setDestination: decodeRoutineResultDestination,
     deliveries: decodeRoutineResultDeliveries,
     resend: decodeVoid,
+  }),
+  localPlanning: bridgeGroup(IPC_ENDPOINTS.localPlanning, {
+    availability: planning.decodePlanningAvailabilityReply,
+    enter: planning.decodePlanningSessionReply,
+    leave: planning.decodePlanningLeaveReply,
+    confirmExit: planning.decodePlanningVoidReply,
+    stopActivity: planning.decodePlanningVoidReply,
+    listProjects: planning.decodePlanningProjectsReply,
+    getProject: planning.decodePlanningProjectReply,
+    listMilestones: planning.decodePlanningMilestonesReply,
+    listTickets: planning.decodePlanningTicketsReply,
+    listReviews: planning.decodePlanningReviewsReply,
+    getReview: planning.decodePlanningReviewReply,
+    listDrafts: planning.decodePlanningDraftsReply,
+    run: planning.decodePlanningCommandReply,
+    changed: planning.decodePlanningChange,
+    prepareExit: planning.decodePlanningPrepareExit,
   }),
   voice: bridgeGroup(IPC_ENDPOINTS.voice, {
     getModelStatus: decodeVoiceModelStatus,

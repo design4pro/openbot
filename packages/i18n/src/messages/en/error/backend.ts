@@ -1,6 +1,20 @@
 import { defineMessages } from "../../../message";
 
 export const messages = defineMessages("error.backend", {
+  "error.backend.planningUnavailable": "Local planning is not available on this host or platform.",
+  "error.backend.planningIdentityInvalid":
+    "The local profile identity is invalid. Restore the complete profile to recover access.",
+  "error.backend.planningForbidden": "This window cannot access local planning.",
+  "error.backend.planningPrivacyBusy": "Stop active screen viewing or computer control before you open local planning.",
+  "error.backend.planningStaleScope": "The selected host changed. Open local planning again.",
+  "error.backend.planningNotFound": "This planning item no longer exists.",
+  "error.backend.planningRevisionConflict": "This item changed. Keep your input and load the current version.",
+  "error.backend.planningOperationConflict": "This request identifier was already used for different input.",
+  "error.backend.planningInvalidTransition": "This planning action is not available in the current state.",
+  "error.backend.planningInvalidInput": "Check the planning fields and try again.",
+  "error.backend.planningLimitReached":
+    "The local draft limit was reached. Discard a saved draft before you add another.",
+  "error.backend.planningStorageFailed": "The planning change could not be saved. Keep your input and try again.",
   "error.backend.eventsUnavailable": "Events are not available on this host.",
   "error.backend.databaseIntegrity": "OpenBot database failed its integrity check.",
   "error.backend.webhookRouteLimit": "A host can have at most {limit} webhook routines.",

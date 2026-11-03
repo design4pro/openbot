@@ -173,7 +173,13 @@ export async function domainCases(root: string): Promise<string[]> {
     await fail(
       service.run(otherWindow, {
         operationId: randomUUID(),
-        action: { kind: "discard_draft", draftId: draft.objectId, expectedDraftRevision: 1 },
+        action: {
+          kind: "save_draft",
+          draftId: draft.objectId,
+          expectedDraftRevision: 1,
+          target: { kind: "project", id: null },
+          form: { title: "", goal: "Other window cannot overwrite" },
+        },
       }),
       "forbidden",
     );
@@ -293,6 +299,20 @@ export async function domainCases(root: string): Promise<string[]> {
       (await Effect.runPromise(reopenedService.listDrafts(reopened.issue(), { limit: 100 }))).items.length,
       100,
     );
+    const recoveredContext = reopened.issue();
+    const recovered = (await Effect.runPromise(reopenedService.listDrafts(recoveredContext, { limit: 100 }))).items[0];
+    assert.ok(recovered);
+    await Effect.runPromise(
+      reopenedService.run(recoveredContext, {
+        operationId: randomUUID(),
+        action: { kind: "discard_draft", draftId: recovered.id, expectedDraftRevision: recovered.revision },
+      }),
+    );
+    assert.equal(
+      (await Effect.runPromise(reopenedService.listDrafts(recoveredContext, { limit: 100 }))).items.length,
+      99,
+    );
+    cases.push("recovered-draft-discard");
     // Authorization must precede receipt replay even when a receipt exists.
     db.connection.exec("DELETE FROM local_profile_identity_bootstrap");
     await fail(service.run(ctx, command), "identity_invalid");

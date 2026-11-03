@@ -91,6 +91,7 @@ export function verifyPlanningReport(value: unknown): PlanningReport {
       "command-crash",
       "private-event-metadata",
       "channel-independent-replay",
+      "recovered-draft-discard",
     ],
     admission: [
       "public-lifetime",
