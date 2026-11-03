@@ -54,7 +54,7 @@ describe("OpenBotDatabase", () => {
     const path = database.path;
     const root = database.userDataPath;
     database.close();
-    const legacy = new DatabaseSync(path);
+    const legacy = openHistoricalFixture(path);
     removeSchemaAfterVersion14(legacy);
     // The squatted name is the index's, not a table's: the migration creates its tables with
     // IF NOT EXISTS, and SQLite refuses an index whose name a table already holds however the
@@ -172,6 +172,7 @@ describe("OpenBotDatabase", () => {
       { version: 47 },
       { version: 48 },
       { version: 49 },
+      { version: 50 },
     ]);
     database.close();
   });
@@ -1363,7 +1364,7 @@ describe("OpenBotDatabase", () => {
     database.persistConversation(snapshot, "conversation.snapshot-updated");
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     legacy.exec("PRAGMA journal_mode = WAL");
     legacy
@@ -1441,7 +1442,7 @@ describe("OpenBotDatabase", () => {
     await runCauseEffect(database.initialize());
     database.close();
 
-    const analyticsRelease = new DatabaseSync(database.path);
+    const analyticsRelease = openHistoricalFixture(database.path);
     for (const table of ["memories", "routines", "routine_triggers", "routine_runs"])
       analyticsRelease.exec(`DROP TABLE projection_channel_${table}`);
     for (const table of ["assignments", "tasks", "messages", "summaries", "reads", "contexts"])
@@ -1511,6 +1512,7 @@ describe("OpenBotDatabase", () => {
       { version: 47 },
       { version: 48 },
       { version: 49 },
+      { version: 50 },
     ]);
     expect(migrated.connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     migrated.close();
@@ -1535,7 +1537,7 @@ describe("OpenBotDatabase", () => {
     });
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeProviderHistorySchema(legacy);
     legacy
       .prepare(
@@ -1620,7 +1622,7 @@ describe("OpenBotDatabase", () => {
 
     // Recreate the unshipped channel branch's version 18 profile: channel migrations are marked through
     // 18, while its provider table still has the three-provider CHECK that migration 17 widens.
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeProviderHistorySchema(legacy);
     legacy.exec(`
       PRAGMA foreign_keys = OFF;
@@ -1671,7 +1673,7 @@ describe("OpenBotDatabase", () => {
         .get(),
     ).toMatchObject({ sql: expect.not.stringContaining("CHECK(provider") });
     expect(migrated.connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-      version: 49,
+      version: 50,
     });
     migrated.close();
   });
@@ -1686,7 +1688,7 @@ describe("OpenBotDatabase", () => {
     database.close();
 
     // A version 19 database: the table migration 20 creates is not there, and neither is its row.
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeProviderHistorySchema(legacy);
     legacy.exec(`
       DROP TABLE projection_mcp_servers;
@@ -1715,7 +1717,7 @@ describe("OpenBotDatabase", () => {
       { name: "Filesystem" },
     ]);
     expect(reopened.connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-      version: 49,
+      version: 50,
     });
     reopened.close();
   });
@@ -1749,7 +1751,7 @@ describe("OpenBotDatabase", () => {
       database.close();
 
       // A version 24 database: neither the tables of migration 25 nor its marker.
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       removeProviderHistorySchema(legacy);
       legacy.exec(`
         DROP TABLE projection_messaging_allowed_roles;
@@ -1781,7 +1783,7 @@ describe("OpenBotDatabase", () => {
       expect(migrated.listAgents()).toEqual([agent]);
       expect(migrated.readConversation(agent.id, agent.threadId).messages).toEqual(conversation.messages);
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(connection.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
@@ -1826,7 +1828,7 @@ describe("OpenBotDatabase", () => {
 
     // A version 20 database, written when `computer_use` was still a name a user could take. The
     // second row holds the first name the migration reaches for, so it has to reach further.
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeProviderHistorySchema(legacy);
     legacy.exec(`
       INSERT INTO projection_mcp_servers
@@ -1870,7 +1872,7 @@ describe("OpenBotDatabase", () => {
     await runCauseEffect(database.initialize());
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     legacy.exec(`
       DROP TABLE projection_routine_runs;
@@ -1944,6 +1946,7 @@ describe("OpenBotDatabase", () => {
       { version: 47 },
       { version: 48 },
       { version: 49 },
+      { version: 50 },
     ]);
     migrated.close();
   });
@@ -1955,7 +1958,7 @@ describe("OpenBotDatabase", () => {
     await runCauseEffect(database.initialize());
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeReactionsToV7(legacy);
     legacy.close();
@@ -1988,7 +1991,7 @@ describe("OpenBotDatabase", () => {
     await runCauseEffect(database.initialize());
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeReactionsToV7(legacy);
     legacy.exec("CREATE TABLE projection_reactions_v8 (blocker TEXT)");
@@ -2051,6 +2054,7 @@ describe("OpenBotDatabase", () => {
       { version: 47 },
       { version: 48 },
       { version: 49 },
+      { version: 50 },
     ]);
     retried.close();
   });
@@ -2072,7 +2076,7 @@ describe("OpenBotDatabase", () => {
     });
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     legacy.prepare("DELETE FROM schema_migrations WHERE version >= 10").run();
     legacy.close();
@@ -2103,7 +2107,7 @@ describe("OpenBotDatabase", () => {
     });
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     legacy.prepare("DELETE FROM schema_migrations WHERE version >= 11").run();
     legacy.close();
@@ -2137,7 +2141,7 @@ describe("OpenBotDatabase", () => {
     });
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     legacy.exec(`
       DELETE FROM schema_migrations WHERE version >= 11;
@@ -2177,7 +2181,7 @@ describe("OpenBotDatabase", () => {
     await runCauseEffect(database.initialize());
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeToV11(legacy);
     legacy.exec(`
@@ -2209,7 +2213,7 @@ describe("OpenBotDatabase", () => {
     await runCauseEffect(database.initialize());
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeToV11(legacy);
     legacy.exec(`
@@ -2264,7 +2268,7 @@ describe("OpenBotDatabase", () => {
     const agentId = "agent-2f1c9a44-1d2e-4a7b-9c30-5e6f7a8b9c0d";
     const legacyWorkspace = `/Users/dev/OpenBot/Agents/${legacyId}`;
     const workspace = `/Users/dev/OpenBot/Agents/${agentId}`;
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeToV11(legacy);
     seedLegacyAgent(legacy, legacyId, legacyWorkspace);
@@ -2418,7 +2422,7 @@ describe("OpenBotDatabase", () => {
     database.close();
 
     const legacyId = "bot-6d3e8b17-9c04-4f21-8a55-1b2c3d4e5f60";
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeToV11(legacy);
     seedLegacyAgent(legacy, legacyId, `/Users/dev/OpenBot/Bots/${legacyId}`);
@@ -2462,7 +2466,7 @@ describe("OpenBotDatabase", () => {
     // Either can be sitting beside the `agent-` spelling this migration would rename it to, and renaming
     // one onto the other is a primary-key collision the substitution resolves by dropping a row -- so an
     // agent nobody touched disappears on upgrade.
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     downgradeToV11(legacy);
     seedLegacyAgent(legacy, "bot-research", "/Users/dev/OpenBot/Agents/bot-research");
@@ -2551,7 +2555,7 @@ describe("OpenBotDatabase", () => {
     });
     database.close();
 
-    const legacy = new DatabaseSync(database.path);
+    const legacy = openHistoricalFixture(database.path);
     removeSchemaAfterVersion14(legacy);
     legacy.exec(`
       PRAGMA foreign_keys = OFF;
@@ -2643,7 +2647,7 @@ describe("OpenBotDatabase", () => {
       database.close();
 
       // A v16 database: the shipped three-provider constraint, and the migration ledger stamped one short.
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       legacy.exec(`
       DELETE FROM schema_migrations WHERE version >= 17;
       PRAGMA foreign_keys = OFF;
@@ -2771,7 +2775,7 @@ describe("OpenBotDatabase", () => {
       database.close();
 
       // A v21 database: the four-provider constraint that migration 17 wrote, and no marker for 22.
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       legacy.exec(`
       DELETE FROM schema_migrations WHERE version >= 22;
       PRAGMA foreign_keys = OFF;
@@ -2843,7 +2847,7 @@ describe("OpenBotDatabase", () => {
       expect(migrated.connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       expect(migrated.connection.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
       expect(migrated.connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(
         migrated.connection.prepare("SELECT provider_session_id FROM projection_turns WHERE turn_id = ?").get("turn-1"),
@@ -2914,7 +2918,7 @@ describe("OpenBotDatabase", () => {
         .run(threadId, linkedSessionId);
       database.close();
 
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       const list = providers.map((provider) => `'${provider}'`).join(", ");
       legacy.exec(`
       DELETE FROM schema_migrations WHERE version > ${source};
@@ -2984,7 +2988,7 @@ describe("OpenBotDatabase", () => {
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       expect(connection.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(
         connection.prepare("SELECT provider_session_id FROM projection_turns WHERE turn_id = ?").get("turn-1"),
@@ -3076,7 +3080,7 @@ describe("OpenBotDatabase", () => {
         .run(threadId, linkedSessionId);
       database.close();
 
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       const list = providers.map((provider) => `'${provider}'`).join(", ");
       legacy.exec(`
       DELETE FROM schema_migrations WHERE version > ${source};
@@ -3146,7 +3150,7 @@ describe("OpenBotDatabase", () => {
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       expect(connection.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(
         connection.prepare("SELECT provider_session_id FROM projection_turns WHERE turn_id = ?").get("turn-1"),
@@ -3251,7 +3255,7 @@ describe("OpenBotDatabase", () => {
         .run(threadId, linkedSessionId);
       database.close();
 
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       const list = providers.map((provider) => `'${provider}'`).join(", ");
       legacy.exec(`
       DELETE FROM schema_migrations WHERE version > ${source};
@@ -3321,7 +3325,7 @@ describe("OpenBotDatabase", () => {
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       expect(connection.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(
         connection.prepare("SELECT provider_session_id FROM projection_turns WHERE turn_id = ?").get("turn-1"),
@@ -3443,7 +3447,7 @@ describe("OpenBotDatabase", () => {
       database.close();
 
       // The shipped shape: no policy column, and no marker past the source version.
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       legacy.exec(`
         ALTER TABLE projection_agent_routines DROP COLUMN limit_policy;
         ALTER TABLE projection_channel_routines DROP COLUMN limit_policy;
@@ -3490,7 +3494,7 @@ describe("OpenBotDatabase", () => {
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       expect(connection.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       const agentRoutines = new AgentRoutineStore(migrated);
       expect(agentRoutines.get(agent.id, agentRoutine.id)?.limitPolicy).toBe("wait");
@@ -3581,7 +3585,7 @@ describe("OpenBotDatabase", () => {
         .run(threadId, linkedSessionId);
       database.close();
 
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       const list = providers.map((provider) => `'${provider}'`).join(", ");
       legacy.exec(`
       DELETE FROM schema_migrations WHERE version > ${source};
@@ -3655,7 +3659,7 @@ describe("OpenBotDatabase", () => {
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
       expect(connection.prepare("PRAGMA integrity_check").get()).toEqual({ integrity_check: "ok" });
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(
         connection.prepare("SELECT provider_session_id FROM projection_turns WHERE turn_id = ?").get("turn-1"),
@@ -3830,7 +3834,7 @@ describe("OpenBotDatabase", () => {
       database.close();
 
       // The shipped shape: no routine flow tables, and no marker past the source version.
-      const legacy = new DatabaseSync(database.path);
+      const legacy = openHistoricalFixture(database.path);
       legacy.exec(`
         DROP TABLE routine_flow_steps;
         DROP TABLE routine_flow_links;
@@ -3882,7 +3886,7 @@ describe("OpenBotDatabase", () => {
       expect(migrated.readConversation(agent.id, agent.threadId).messages).toEqual(conversation.messages);
       expect(routineRows(connection)).toEqual(original);
       expect(connection.prepare("SELECT MAX(version) AS version FROM schema_migrations").get()).toEqual({
-        version: 49,
+        version: 50,
       });
       expect(connection.prepare("PRAGMA foreign_keys").get()).toEqual({ foreign_keys: 1 });
       expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
@@ -3951,6 +3955,7 @@ describe("OpenBotDatabase", () => {
   it("checks the file after a migration at a start after a clean close", async () => {
     const database = await createDatabase();
     const userDataPath = database.userDataPath;
+    removeLocalPlanningFixture(database.connection);
     database.connection.exec(
       "DROP TABLE projection_agent_threads; DELETE FROM schema_migrations WHERE version IN (38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49)",
     );
@@ -4256,6 +4261,29 @@ function withoutAttachments(message: ConversationMessage): ConversationMessage {
   const result = { ...message };
   delete result.attachments;
   return result;
+}
+
+/** Opens only a synthetic pre-v50 fixture, before the test removes its other newer schema. */
+function openHistoricalFixture(path: string): DatabaseSync {
+  const database = new DatabaseSync(path);
+  removeLocalPlanningFixture(database);
+  return database;
+}
+
+/** A historical fixture cannot retain the identity and marker that only schema 50 creates. */
+function removeLocalPlanningFixture(database: DatabaseSync): void {
+  database.exec(`
+    DROP TABLE local_project_drafts;
+    DROP TABLE local_project_command_keys;
+    DROP TABLE local_project_decisions;
+    DROP TABLE projection_local_project_tickets;
+    DROP TABLE local_project_reviews;
+    DROP TABLE projection_local_project_milestones;
+    DROP TABLE projection_local_projects;
+    DROP TABLE local_profile_identity_bootstrap;
+    DROP TABLE local_profile_identity;
+    DELETE FROM schema_migrations WHERE version = 50;
+  `);
 }
 
 // These tests construct released schemas by stripping newer additions from a fresh fixture.
