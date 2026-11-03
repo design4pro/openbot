@@ -24,17 +24,23 @@ capability. The main-owned native support map does not read report files.
 | --- | --- | --- |
 | Durable owner, concurrent creation, copy, new profile, corruption refusal | Task 1 identity: `ad6f7278-e8f0-4a59-a131-f90169cc86a4`, 5 cases; additive schema 50 migration/parity fixtures | A complete consistent profile copy is required; no account recovery feature |
 | Released data preservation and failure behavior | 53 local migration fixtures, schema parity, affected historical migration fixtures | No production database was upgraded during testing |
-| Same-opened-file exclusion, aliases, ordinary symlinks, storage overlap | Task 2/9 files-service: `91d7993e-f364-42d5-9536-5b4b2817a908`, 9 cases; actual files: `1febfaf4-b353-47b1-9ae3-c3394da2ae66` | OS processes with full user access remain outside protection |
+| Same-opened-file exclusion, aliases, ordinary symlinks, storage overlap | Task 2/9 files-service: `91d7993e-f364-42d5-9536-5b4b2817a908`, 9 cases; actual files: `67eb3260-03f4-4687-9947-7bdb68da871e` | OS processes with full user access remain outside protection |
 | Actual HTTP, browser upload destination, staging, instance export, public-mode exclusion | Actual files group includes positive ordinary controls and protected refusals | External websites and production data were not used |
 | Managed protocol and backup replacement races | Actual files group: protocol ordinary control, DB replacement refusal, backup ordinary copy control and replacement refusal | Linux backup staging is observed before the existing unavailable ditto compressor; no complete Linux backup archive claim |
 | Atomic capture/control exclusion, uncertain stops | Admission `d4aab076-8563-461d-81b9-c03fbc5b96fa`, 8 cases | Service report only; separate native/app proof required |
 | Stale daemon client, queued input, persistent native leases, crash/restart recovery | Native `0712bb56-250a-461d-9ca6-7579276e28a4`, 11 cases; real input observation and Sunshine/Moonlight | Only the exact isolated configuration below |
 | Revisions, replay, payload conflicts, drafts, owner check before replay, crash reconciliation | Domain `b942dfbf-8158-4a94-8895-e307ab3f94d3`, 16 cases | No live provider execution |
 | Manual gates, criteria invalidation, stale decision refusal, durable review history | Reviews `ddb7fc44-7986-4efe-a625-ec8e242e7a46`, 6 cases | Manual evidence only; no automated verification or agent handoff |
-| Account-independent ownership, authorized main frames, host generations, actual renderer destruction | Task 9 fresh full Electron `af6c62e3-1bff-47ec-b521-1ae935e4ce7e`, 12 cases; protected sender/preload tests | Account transport and keyring ports are synthetic |
-| Active-local-host Work, Tasks/Undo, keyboard forms, validation, conflict/recovery, quota, multiwindow save/stay/discard | Task 9 UI `5aeb2674-31bf-4cd7-bcb8-6a19464e2bf2`, 23 cases; preview consumer and focused renderer checks | Not a WCAG certification or a screen-reader audit |
-| Remote content/event/route absence, roles, protocol v1-v9, diagnostics, mute/unmute, revoke/reconnect | Task 9 remote `1c775eb2-6cb5-4e57-befa-93f1ac5b5636`, 13 required cases; real HTTP/WebSocket plus production WebRTC RPC/events/revoke/reconnect pass | Synthetic account/Signal issuance; no WAN/TURN claim |
+| Account-independent ownership, authorized main frames, host generations, actual renderer destruction | Task 9 fresh full Electron `9a8bff0e-5db2-40e4-b6f8-103c744c5922`, 12 cases; protected sender/preload tests | Account transport and keyring ports are synthetic |
+| Active-local-host Work, Tasks/Undo, keyboard forms, validation, conflict/recovery, quota, multiwindow save/stay/discard | Task 9 UI `afd81ac3-8478-423f-92d5-7622ded35e93`, 23 cases; preview consumer and focused renderer checks | Not a WCAG certification or a screen-reader audit |
+| Remote content/event/route absence, roles, protocol v1-v9, diagnostics, mute/unmute, revoke/reconnect | Task 9 remote `12e30e2f-469a-40c8-b735-1558e7df2bda`, 13 required cases; real HTTP/WebSocket plus production WebRTC RPC/events/revoke/reconnect pass | Synthetic account/Signal issuance; no WAN/TURN claim |
 | Unexpected worker death and report rejection | Verifier `aab2ac0c-73f5-412c-bde5-09648e462bb1`, actual positive reports plus 4 negative cases | Semantic report validation is not cryptographic attestation |
+
+The final supervised run on commit `30601a7737c73ca98499ac846e494925634e016e` passes all four
+application groups: launcher `efb7342f-e41a-40f0-9432-098e239d118b`. It stopped both exact owned stacks
+with no unresolved records. The cgroup remains at oom=50 / oom_kill=6; there were no new OOM events.
+This validates local launcher composition and cleanup, not execution of a GitHub Actions runner.
+Earlier failed cold/reload observations remain open limits below.
 
 ## Exact native/application configuration
 

@@ -10,7 +10,7 @@
 
 **Spec:** [Accepted design](../specs/2026-11-01-local-identity-protected-planning-design.md).
 **Context:** [S0 evidence](../../../plans/011-project-workspaces/s0-evidence.md), [blocked execution handoff](2026-11-01-project-workspaces-s1.md).
-**State:** Execution approved on 2026-11-02. Tasks 1-8 have service/native/application evidence as applicable; Task 2 final transfer proof and Task 9 integration/report gates are being closed. The final independent branch review remains open. Private entry is limited to the exact reviewed Linux/x64 Xvfb configuration; other configurations refuse entry. See the [execution evidence](../../../plans/011-project-workspaces/s1-local-evidence.md).
+**State:** Tasks 1-9 complete on 2026-11-03, including the supervised Electron/UI/files/remote integration run. The final independent branch review remains open. Private entry is limited to the exact reviewed Linux/x64 Xvfb configuration; other configurations refuse entry. See the [execution evidence](../../../plans/011-project-workspaces/s1-local-evidence.md).
 **Source baseline:** `d3f381835`. Recheck source locations and the next unused migration before execution.
 
 ## Global Constraints
