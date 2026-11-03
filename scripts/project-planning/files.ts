@@ -107,6 +107,12 @@ export async function fileServiceCases(root: string): Promise<string[]> {
     assert.ok(staged);
     const copiedBytes = await Effect.runPromise(store.database.protectedFiles.readAllowedFile(staged.path));
     assert.equal(copiedBytes.toString("utf8"), "ordinary workspace bytes");
+    const ordinaryAlias = join(agent.workspacePath, "ordinary-link.txt");
+    await symlink(join(agent.workspacePath, "ordinary.txt"), ordinaryAlias);
+    assert.equal(
+      (await Effect.runPromise(store.database.protectedFiles.readAllowedFile(ordinaryAlias))).toString("utf8"),
+      "ordinary workspace bytes",
+    );
     record("ordinary-file-control");
     const collisionSources: string[] = [];
     for (const name of ["first", "second"]) {

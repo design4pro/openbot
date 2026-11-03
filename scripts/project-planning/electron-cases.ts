@@ -18,7 +18,17 @@ export async function exposePrivate(
   main: InspectorClient,
   expression: string,
   field: string,
-  slot: "options" | "remoteStore" | "remoteCipher" | "pendingExit",
+  slot:
+    | "options"
+    | "remoteStore"
+    | "remoteCipher"
+    | "pendingExit"
+    | "browserUploads"
+    | "hostOptions"
+    | "hostGateway"
+    | "hostGatewayOptions"
+    | "clientTransport"
+    | "clientOptions",
 ): Promise<void> {
   const object = objectReference.parse(await main.send("Runtime.evaluate", { expression })).result.objectId;
   const property = properties
@@ -54,7 +64,7 @@ async function draft(page: Page, session: PlanningSession, title: string) {
     ),
   );
 }
-async function signIn(main: InspectorClient, page: Page, email: string): Promise<void> {
+export async function signIn(main: InspectorClient, page: Page, email: string): Promise<void> {
   const challenge = await page.evaluate((email) => window.openbot.auth.requestEmailCode(email), email);
   assert.equal(challenge.status, "code_sent");
   if (challenge.status !== "code_sent") throw new Error("Synthetic account challenge failed.");
@@ -208,14 +218,18 @@ export async function electronPlanningCases(
   assert.equal(project.revision, 4);
   recordCase("electron-account-continuity");
 
+  await main.evaluate(
+    `(async()=>{const f=__planningFixture;const E=require("effect").Effect;f.auxiliaryAgent=await E.runPromise(f.services.service.createAgentProfile({name:"Auxiliary evidence",description:"Disposable window evidence",avatarSeed:"planning-auxiliary",avatarHue:null}));return true;})()`,
+  );
   const auxiliaryCreated = context.waitForEvent("page");
   await main.evaluate(
-    '__planningFixture.windows.openChatWindow({serverId:"local",agentId:"planning-fixture-auxiliary"})',
+    '__planningFixture.windows.openChatWindow({serverId:"local",agentId:__planningFixture.auxiliaryAgent.id})',
   );
   const auxiliary = await auxiliaryCreated;
   await auxiliary.waitForFunction(() => Boolean(window.openbot));
   await assert.rejects(auxiliary.evaluate(() => window.openbot.localPlanning.availability()));
   recordCase("electron-auxiliary-refusal");
+  await auxiliary.close();
 
   await assert.rejects(first.evaluate(() => window.openbot.servers.select("missing-planning-fixture-host")));
   const stale = await first.evaluate((session) => window.openbot.localPlanning.listProjects({ session, input: {} }), {
@@ -342,12 +356,16 @@ export async function electronPlanningCases(
   assert.equal(second.isClosed(), false);
   recordCase("electron-blocked-exit");
 
+  await main.evaluate(
+    `(async()=>{const f=__planningFixture;const E=require("effect").Effect;f.survivingAgent=await E.runPromise(f.services.service.createAgentProfile({name:"Surviving auxiliary evidence",description:"Disposable ordinary input evidence",avatarSeed:"planning-surviving",avatarHue:null}));return true;})()`,
+  );
   const survivingAuxiliaryCreated = context.waitForEvent("page");
   await main.evaluate(
-    '__planningFixture.windows.openChatWindow({serverId:"local",agentId:"planning-fixture-surviving"})',
+    '__planningFixture.windows.openChatWindow({serverId:"local",agentId:__planningFixture.survivingAgent.id})',
   );
   const survivingAuxiliary = await survivingAuxiliaryCreated;
   await survivingAuxiliary.waitForFunction(() => Boolean(window.openbot));
+  const ordinaryInput = await survivingAuxiliary.evaluateHandle(() => ({ text: "Unsaved ordinary auxiliary input" }));
 
   await main.evaluate(
     `(()=>{const f=__planningFixture;f.exitTrace=[];for(const window of require("electron").BrowserWindow.getAllWindows()) {if(window.webContents.getURL().includes("localhost:"))window.webContents.once("destroyed",()=>f.exitTrace.push("destroyed"));}return true;})()`,
@@ -396,6 +414,8 @@ export async function electronPlanningCases(
     false,
     "Deliberate private replacement must retain ordinary auxiliary input.",
   );
+  assert.equal(await ordinaryInput.evaluate((value) => value.text), "Unsaved ordinary auxiliary input");
+  await ordinaryInput.dispose();
   const trace = z
     .array(z.string())
     .parse(
@@ -476,6 +496,9 @@ export async function electronWindowLifecycleCase(
     .string()
     .parse(await main.evaluate("__planningFixture.services.centralAuth.resolveApiUrl('/health/live')"));
   const tab = await page.evaluate((url) => window.openbot.browser.open({ url, focus: false }), browserUrl);
+  await main.evaluate(
+    `(async()=>{const f=__planningFixture;const E=require("effect").Effect;f.auxiliaryAgent=await E.runPromise(f.services.service.createAgentProfile({name:"Auxiliary evidence",description:"Disposable window evidence",avatarSeed:"planning-auxiliary",avatarHue:null}));return true;})()`,
+  );
   const auxiliaryCreated = context.waitForEvent("page");
   await main.evaluate(
     '__planningFixture.windows.openChatWindow({serverId:"local",agentId:"planning-lifecycle-auxiliary"})',

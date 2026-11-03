@@ -11,7 +11,9 @@ import { z } from "zod";
 import { assertMutationAllowed, connectToDevApp } from "./dev-automation/cdp-client";
 import { InspectorClient } from "./dev-automation/inspector-client";
 import { readDevInstanceRecords } from "./dev-automation/instance-registry";
+import { mainTarget, readApplicationRuntime } from "./project-planning/app-fixture";
 import { electronPlanningCases, electronWindowLifecycleCase } from "./project-planning/electron-cases";
+import { type ApplicationRuntime, verifyPlanningEvidence } from "./project-planning/report";
 
 declare global {
   interface Window {
@@ -31,7 +33,15 @@ assert.equal(process.platform, "linux", "Use the isolated Linux desktop.");
 assert.equal(process.env.OPENBOT_PLANNING_ISOLATED, "xvfb");
 const inspectorPort = Number(process.env.V8_INSPECTOR_BRK_PORT);
 assert.ok(Number.isInteger(inspectorPort) && inspectorPort >= 1024);
-const output = join(root, ".openbot-build/project-planning", randomUUID(), "electron");
+const publicFiles = process.argv.includes("--case=files-public");
+const applicationGroup =
+  process.argv.includes("--case=files") || publicFiles
+    ? "files"
+    : process.argv.includes("--case=remote")
+      ? "remote"
+      : null;
+const runId = randomUUID();
+const output = join(root, ".openbot-build/project-planning", runId, applicationGroup ?? "electron");
 await mkdir(output, { recursive: true, mode: 0o700 });
 const logger = createOpenBotLogger("project-planning-electron-e2e");
 const cases: string[] = [];
@@ -41,11 +51,13 @@ const report: {
   commit: string;
   basis: string;
   platform: string;
+  runtime: ApplicationRuntime | null;
   sourceHashes: Record<string, string>;
   cases: string[];
   passed: boolean;
   failure: string | null;
   liveAccountTransportTested: boolean;
+  group?: "files" | "remote";
   diagnostics?: {
     support: Array<{ value: boolean; local: boolean; phase: string }>;
     io: Array<{ path: string; code: string }>;
@@ -53,7 +65,8 @@ const report: {
   };
 } = {
   schemaVersion: 1,
-  runId: randomUUID(),
+  runId,
+  runtime: null,
   commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
   basis: "electron",
   platform: `${process.platform}-${process.arch}`,
@@ -62,6 +75,7 @@ const report: {
   passed: false,
   failure: null,
   liveAccountTransportTested: false,
+  ...(applicationGroup ? { group: applicationGroup } : {}),
 };
 for (const path of [
   "scripts/project-planning/electron-cases.ts",
@@ -82,6 +96,24 @@ for (const path of [
   "src/preload/index.ts",
   "src/preload/local-planning-decoding.ts",
   "src/main/private-planning-support.ts",
+  "scripts/project-planning/app-fixture.ts",
+  "scripts/project-planning/app-files.ts",
+  "scripts/project-planning/app-file-races.ts",
+  "src/main/file-response.ts",
+  "src/main/session-configuration.ts",
+  "src/main/maintenance-service.ts",
+  "src/main/remote-screen-gateway.ts",
+  "scripts/project-planning/remote.ts",
+  "scripts/project-planning/remote-webrtc.ts",
+  "scripts/project-planning/remote-peer.ts",
+  "scripts/project-planning/remote-peer-protocol.ts",
+  "src/backend/protected-profile-files.ts",
+  "src/main/team-api-server.ts",
+  "src/main/team-api/route-files.ts",
+  "scripts/project-planning/report.ts",
+  "out-dev-app/main/index.js",
+  "out-dev-app/preload/index.cjs",
+  "out-dev-app/preload/teamWebrtc.cjs",
 ])
   report.sourceHashes[path] = createHash("sha256")
     .update(await readFile(join(root, path)))
@@ -134,6 +166,7 @@ try {
  if(path==="/v1/auth/email/start"){fixture.email=JSON.parse(init.body).email;return json({challengeId:"planning-challenge",expiresAt:Date.now()+60000,developmentCode:"123456"});}
  if(path==="/v1/auth/email/verify"){fixture.user={id:fixture.email==="a@example.test"?"account-a":"account-b",email:fixture.email,name:"Fixture",avatarUrl:null,analyticsEnabled:false};return json({sessionToken:"synthetic-planning-session",user:fixture.user});}
  if(path==="/v1/auth/logout")return new Response(null,{status:204});
+ if(path.startsWith("/v2/remote/sessions/")&&path.endsWith("/end"))return new Response(null,{status:204});
  if(path==="/v1/auth/me")return json({user:fixture.user});
  if(path==="/v2/remote/hosts/")return json({hosts:[]});
  return new Response(JSON.stringify({code:"fixture_unavailable",message:"Synthetic transport only."}),{status:503,headers:{"content-type":"application/json"}});
@@ -180,6 +213,7 @@ try {
   await main.evaluate(
     `(async()=>{const contents=__planningFixture.windows.getMainWindow().webContents;if(contents.isLoadingMainFrame())await new Promise(resolve=>contents.once("did-finish-load",resolve));return true;})()`,
   );
+  report.runtime = await readApplicationRuntime(main);
   const records = readDevInstanceRecords().filter(
     (record) => resolve(record.projectRoot) === root && record.instanceId === instance && record.service === "app",
   );
@@ -189,6 +223,7 @@ try {
   const connected = await connectToDevApp(record.remoteDebuggingPort, logger, {
     expectedRendererPort: record.rendererPort,
     ownerPid: record.pid,
+    pageSelector: await mainTarget(main),
   });
   closeBrowser = connected.close;
   const page = connected.page;
@@ -205,6 +240,33 @@ try {
   cases.push("electron-sandbox");
   if (process.argv.includes("--case=bootstrap")) {
     report.basis = "electron-bootstrap";
+  } else if (process.argv.includes("--case=unsupported")) {
+    report.basis = "electron-unsupported";
+    assert.equal(unwrap(await page.evaluate(() => window.openbot.localPlanning.availability())).reason, "unavailable");
+    const refused = await page.evaluate(() => window.openbot.localPlanning.enter());
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.equal(refused.error.code, "unavailable");
+    cases.push("unsupported-configuration-refusal");
+  } else if (applicationGroup === "files") {
+    report.basis = publicFiles ? "electron-public-files" : "electron-app";
+    const { applicationFileCases } = await import("./project-planning/app-files");
+    await applicationFileCases(
+      main,
+      connected.browser,
+      page,
+      (id) => {
+        report.cases.push(id);
+        logger.info("Application file case passed.", { id });
+      },
+      !publicFiles,
+    );
+  } else if (applicationGroup === "remote") {
+    report.basis = "electron-app";
+    const { remotePlanningCases } = await import("./project-planning/remote");
+    await remotePlanningCases(main, connected.browser, page, (id) => {
+      report.cases.push(id);
+      logger.info("Remote case passed.", { id });
+    });
   } else {
     await main.evaluate("require('effect').Effect.runPromise(__planningFixture.services.cuaDriver.state())");
     const initial = unwrap(await page.evaluate(() => window.openbot.localPlanning.availability()));
@@ -247,6 +309,7 @@ try {
     assert.equal(detail.title, "Private fixture canary");
     cases.push("electron-local-owner");
     if (process.argv.includes("--case=window-lifecycle")) {
+      report.basis = "electron-window-lifecycle";
       await electronWindowLifecycleCase(main, connected.browser, page, session);
       cases.push("electron-window-lifecycle");
     } else {
@@ -257,11 +320,14 @@ try {
     }
   }
   report.passed = true;
+  if (report.basis === "electron" || report.basis === "electron-app") verifyPlanningEvidence(report);
 } catch (cause) {
+  report.passed = false;
   report.failure = cause instanceof Error ? cause.message : "ElectronProofFailure";
   process.exitCode = 1;
   logger.error("Electron proof failed.", { failure: report.failure });
 } finally {
+  await inspector?.evaluate("__planningFixture.restoreRemoteEvidence?.()").catch(() => undefined);
   if (inspector) {
     const diagnostics = await inspector
       .evaluate("globalThis.__planningFixture?.supportDiagnostics ?? null")

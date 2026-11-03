@@ -79,3 +79,14 @@ table, IPC channel or product string, or when a term in the code disagrees with 
   application's database and holds none of these. **owner**: the agent whose id
   `openbot_metadata` records for a table, and the only agent that can drop or alter it; every other
   agent can still read and write its rows, and the user can delete any table in agent settings.
+
+- **local profile principal**: the durable local owner UUID in `local_profile_identity`. It is not an
+  account, channel actor, remote host, or authentication token. **local scope** is the separate stable
+  profile scope UUID. A complete consistent profile copy retains both.
+- **project**: an owner-scoped manual local plan (`LocalPlanningService`, `projection_local_projects`).
+  A **milestone** groups criteria and tickets. A **ticket** records manual status and notes; it does
+  not start an agent task. A **review** is submitted evidence tied to criteria; its **decision** is a
+  manual release or return. Changed criteria supersede the earlier decision.
+- **planning generation**: a main-owned freshness fence for local scope access. A **private epoch**
+  identifies the admitted visual/control exclusion lifetime and survives host selection changes.
+  Neither value supplies authority. A **planning draft** is a separately revisioned, bounded saved form.

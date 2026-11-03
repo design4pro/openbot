@@ -174,6 +174,7 @@ import { AgentDuplicationFailed, duplicateAgentIntoLayout } from "../backend/age
 import { AgentMemorySelectionError } from "../backend/agent-memory-store";
 import { runCauseEffect } from "../backend/effect-boundary";
 import { McpServerError } from "../backend/mcp-server-store";
+import { ProtectedProfileFileError } from "../backend/protected-profile-files";
 import { StoredStateFailure } from "../backend/stored-state-effects";
 import type { TeamChatStore } from "../backend/team-chat-store";
 import { agentAccessLevel } from "./agent-access-store";
@@ -1055,9 +1056,16 @@ export class TeamApiServer {
         error instanceof TeamStoreError ||
         error instanceof McpServerError ||
         error instanceof AnalyticsInputError ||
+        error instanceof ProtectedProfileFileError ||
         error instanceof AgentMemorySelectionError;
       const status =
-        error instanceof HttpError || error instanceof RemoteScreenError ? error.status : expected ? 400 : 500;
+        error instanceof ProtectedProfileFileError
+          ? 404
+          : error instanceof HttpError || error instanceof RemoteScreenError
+            ? error.status
+            : expected
+              ? 400
+              : 500;
       // Catalog text with no placeholder is safe to show, and the user can act on it. Any other
       // unexpected text stays private.
       const message =

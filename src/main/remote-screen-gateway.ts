@@ -1108,6 +1108,8 @@ export class RemoteScreenGateway {
   // can hold local paths and ports, so it goes to the host's diagnostics only.
   #runtimeStartRefusal(error: unknown): RemoteScreenError {
     if (error instanceof RemoteScreenError) return error;
+    if (error instanceof PrivatePlanningError)
+      return new RemoteScreenError(409, "session_capacity_reached", sourceText("error.remote.controlUnavailable"));
     const stage = error instanceof RemoteRuntimeStartError ? error.stage : null;
     const cause = error instanceof RemoteRuntimeStartError ? error.cause : error;
     this.#options.onDiagnostic?.(

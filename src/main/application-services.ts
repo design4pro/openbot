@@ -2934,7 +2934,7 @@ export async function createApplicationServices({
     );
   }
   configureAttachmentProtocol({ mailbox, agents: service, remoteServers });
-  configureServerLogoProtocols({ teamStore, remoteServers });
+  configureServerLogoProtocols({ teamStore, remoteServers, protectedFiles: service.protectedFiles });
   // After the servers: the view it opens belongs to one of them, and it has to stop before they do.
   const browserView = new BrowserViewClient({
     servers: remoteServers,

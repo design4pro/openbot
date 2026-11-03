@@ -126,3 +126,19 @@ committed. Results are macOS/Node service evidence, not Electron or live-provide
 These scripts do not run in CI. A future implementation plan that retains them as release checks must
 name the existing CI job owner, supported runtime and selected command. Keep local checks focused;
 leave broad lint, builds and test suites to CI. S0 adds no production migration, feature or release note.
+
+## S1-local implementation follow-up - 2026-11-03
+
+The developer approved the narrower local design and its inline implementation plan after this S0
+handoff. The resulting slice adds durable profile ownership, manual local planning, protected app
+file delivery, and visual/control exclusion. See the
+[architecture](../../architecture/local-planning.md),
+[implementation plan](2026-11-01-project-workspaces-s1-local.md), and
+[evidence matrix](../../../plans/011-project-workspaces/s1-local-evidence.md).
+
+This follow-up does not revise S0's historical negative findings or promote broad S1 execution to
+supported. Positive application evidence is limited to the exact isolated Linux/x64 Xvfb configuration;
+other display/OS configurations refuse private entry. D1/D3 execution, live-provider confinement,
+remote project grants, audience-compatible conversation handoff, repository provisioning, and GitHub
+integration still need their own approved scope and evidence. A provider process with full same-user
+OS access remains outside the application protection boundary.

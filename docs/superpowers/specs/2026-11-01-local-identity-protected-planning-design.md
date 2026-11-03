@@ -5,7 +5,7 @@
 **Parent:** [Plan 011](../../../plans/011-project-workspaces-and-github-integration.md).
 **Handoff:** [S1 blocked handoff](../plans/2026-11-01-project-workspaces-s1.md).
 **Evidence:** [S0 findings](../../../plans/011-project-workspaces/s0-evidence.md).
-**Implementation plan:** [S1-local](../plans/2026-11-01-project-workspaces-s1-local.md), prepared after design approval and awaiting plan review.
+**Implementation plan:** [S1-local](../plans/2026-11-01-project-workspaces-s1-local.md), approved separately for execution on 2026-11-02. See the [execution evidence](../../../plans/011-project-workspaces/s1-local-evidence.md).
 
 ## Intent and scope
 

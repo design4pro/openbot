@@ -9,6 +9,8 @@ import { z } from "zod";
 import { assertMutationAllowed, connectToDevApp } from "./dev-automation/cdp-client";
 import { InspectorClient } from "./dev-automation/inspector-client";
 import { readDevInstanceRecords } from "./dev-automation/instance-registry";
+import { mainTarget, readApplicationRuntime } from "./project-planning/app-fixture";
+import { type ApplicationRuntime, verifyPlanningEvidence } from "./project-planning/report";
 import {
   persistedUiPlanning,
   uiDraftErrorCases,
@@ -29,10 +31,14 @@ assertMutationAllowed({
   target: instance,
 });
 assert.equal(process.env.OPENBOT_PLANNING_ISOLATED, "xvfb");
-const output = join(root, ".openbot-build/project-planning", randomUUID(), "ui");
+const runId = randomUUID();
+const output = join(root, ".openbot-build/project-planning", runId, "ui");
 await mkdir(output, { recursive: true, mode: 0o700 });
 const logger = createOpenBotLogger("project-planning-ui-e2e");
 const report: {
+  runId: string;
+  platform: string;
+  runtime: ApplicationRuntime | null;
   schemaVersion: number;
   basis: string;
   commit: string;
@@ -45,6 +51,9 @@ const report: {
   systemKeyringTested: boolean;
   sourceHashes: Record<string, string>;
 } = {
+  runId,
+  platform: `${process.platform}-${process.arch}`,
+  runtime: null,
   schemaVersion: 1,
   basis: "electron-ui",
   commit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
@@ -59,6 +68,10 @@ const report: {
 };
 const sourceFiles = [
   "scripts/project-planning-ui-e2e.ts",
+  "scripts/project-planning/app-fixture.ts",
+  "scripts/project-planning/report.ts",
+  "out-dev-app/main/index.js",
+  "out-dev-app/preload/index.cjs",
   "scripts/project-planning/ui-cases.ts",
   "src/main/local-planning-windows.ts",
   "packages/contracts/src/ipc-local-planning.ts",
@@ -92,6 +105,7 @@ let main: InspectorClient | null = null;
 let close: (() => Promise<void>) | null = null;
 try {
   main = await InspectorClient.connect(Number(process.env.V8_INSPECTOR_BRK_PORT));
+  report.runtime = await readApplicationRuntime(main);
   const profile = z.string().parse(await main.evaluate("require('electron').app.getPath('userData')"));
   assert.ok(profile.endsWith(`OpenBot Dev ${instance}`));
   const records = readDevInstanceRecords().filter(
@@ -100,13 +114,7 @@ try {
   assert.equal(records.length, 1);
   const record = records[0];
   assert.ok(record);
-  const pageSelector = z
-    .string()
-    .parse(
-      await main.evaluate(
-        `(async()=>{const d=__planningFixture.windows.getMainWindow().webContents.debugger;d.attach("1.3");try{return (await d.sendCommand("Target.getTargetInfo")).targetInfo.targetId;}finally{d.detach();}})()`,
-      ),
-    );
+  const pageSelector = await mainTarget(main);
   const connected = await connectToDevApp(record.remoteDebuggingPort, logger, {
     expectedRendererPort: record.rendererPort,
     ownerPid: record.pid,
@@ -125,16 +133,30 @@ try {
   page.on("console", (message) => {
     if (message.type() === "error") logger.error("Renderer console.", { message: message.text() });
   });
-  page.on("requestfailed", (request) =>
-    logger.error("Renderer request failed.", { url: request.url(), failure: request.failure() }),
-  );
+  let sampledResources = false;
+  page.on("requestfailed", (request) => {
+    logger.error("Renderer request failed.", { url: request.url(), failure: request.failure() });
+    if (!sampledResources && request.failure()?.errorText.includes("INSUFFICIENT_RESOURCES")) {
+      sampledResources = true;
+      void main
+        ?.evaluate(
+          `(async()=>{const fs=require("node:fs/promises");return Promise.all(require("electron").app.getAppMetrics().map(async({pid,type})=>({pid,type,fdCount:await fs.readdir("/proc/"+pid+"/fd").then(rows=>rows.length).catch(()=>null),limit:await fs.readFile("/proc/"+pid+"/limits","utf8").then(text=>text.split("\\n").find(line=>line.startsWith("Max open files"))).catch(()=>null)})));})()`,
+        )
+        .then((value) => logger.warn("Application resource limits at request refusal.", { value }))
+        .catch(() => undefined);
+    }
+  });
   page.on("pageerror", (cause) => logger.error("Renderer error.", { message: cause.message }));
   page.setDefaultTimeout(15000);
   assert.equal((await page.evaluate(() => window.openbot.auth.logout())).status, "signed_out");
   await main.evaluate("__planningFixture.waitAccount()");
+  await page
+    .getByRole("button", { name: /^(Open local Work|Work)$/ })
+    .first()
+    .waitFor({ state: "visible" });
+  await page.waitForLoadState("load");
   recordCase("signed-out-ui");
-  // A repeated run can still have Work open. A real private reload resets only renderer state.
-  await page.reload();
+  // The fixture starts from a public shell. Wait for its actual UI instead of reloading a cold module graph.
   const open = page.getByRole("button", { name: "Open local Work", exact: true });
   await open.focus();
   await page.keyboard.press("Enter");
@@ -215,7 +237,9 @@ try {
   assert.equal(report.activity.providerCalls + report.activity.githubCalls, 0);
   recordCase("zero-provider-github-calls");
   report.passed = true;
+  verifyPlanningEvidence(report);
 } catch (cause) {
+  report.passed = false;
   report.failure = cause instanceof Error ? cause.message : "PlanningUiFailure";
   process.exitCode = 1;
 } finally {

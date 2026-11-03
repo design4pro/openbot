@@ -529,6 +529,17 @@ original file and extracts it with its own tools. An agent sends a ZIP archive b
 archive in the file manager instead of opening it. Remote hosts must advertise the `zip-attachments`
 capability.
 
+## Protected local planning
+
+Work includes manual local projects, milestones, tickets, drafts, and milestone reviews. Ownership
+belongs to the application profile and does not need an OpenBot account. Tasks remains available.
+Private entry requires an explicitly tested display/control configuration; unproved configurations
+refuse entry. The current positive configuration is isolated Linux/x64 Xvfb, not a general desktop
+release claim. Ticket execution, GitHub integration, and project sharing remain outside this slice.
+
+See [local planning architecture](docs/architecture/local-planning.md) and the
+[evidence matrix and focused commands](plans/011-project-workspaces/s1-local-evidence.md).
+
 ## Local data and network boundaries
 
 - `~/OpenBot/Agents/<agent-id>` — one working directory per agent. A profile written before the

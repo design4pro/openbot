@@ -29,7 +29,10 @@ export class ProtectedProfileFiles {
 
   #withAllowedFile<A>(path: string, use: (file: FileHandle) => Effect.Effect<A, ProtectedProfileFileError>) {
     return Effect.acquireUseRelease(
-      Effect.tryPromise({ try: () => open(path, constants.O_RDONLY | constants.O_NOFOLLOW), catch: refused }),
+      Effect.tryPromise({
+        try: async () => open(await realpath(path), constants.O_RDONLY | constants.O_NOFOLLOW),
+        catch: refused,
+      }),
       (file) =>
         Effect.gen({ self: this }, function* () {
           const metadata = yield* Effect.tryPromise({ try: () => file.stat(), catch: refused });

@@ -10,7 +10,7 @@
 
 **Spec:** [Accepted design](../specs/2026-11-01-local-identity-protected-planning-design.md).
 **Context:** [S0 evidence](../../../plans/011-project-workspaces/s0-evidence.md), [blocked execution handoff](2026-11-01-project-workspaces-s1.md).
-**State:** Execution in progress; approved on 2026-11-02. Tasks 1, 3, 5 and 6 have passed their focused service checks. Task 2 has a committed file-policy implementation and passing service checks, but its full application proof is pending. Task 4 needs an isolated native test desktop; approval to start OrbStack is pending. Tasks 7-9 and the final independent branch review remain open. Private planning has no IPC or UI entry point yet.
+**State:** Execution approved on 2026-11-02. Tasks 1-8 have service/native/application evidence as applicable; Task 2 final transfer proof and Task 9 integration/report gates are being closed. The final independent branch review remains open. Private entry is limited to the exact reviewed Linux/x64 Xvfb configuration; other configurations refuse entry. See the [execution evidence](../../../plans/011-project-workspaces/s1-local-evidence.md).
 **Source baseline:** `d3f381835`. Recheck source locations and the next unused migration before execution.
 
 ## Global Constraints
@@ -677,8 +677,8 @@ file/native adapter has a named gate. Do not declare D2 established from source 
 D1/D3 execution, remote project grants, conversation audience enforcement and GitHub remain blocked.
 
 The earlier session selected native execution through `superpowers:executing-plans`; preserve that
-method unless the developer changes it. The next step is developer review of this plan. Approval of
-the design authorizes preparing this document, not starting feature implementation, push, merge or PR.
+method unless the developer changes it. Execution of this plan was approved separately on 2026-11-02. Design approval alone did not authorize
+implementation. No push, merge, PR, deployment, or live-provider execution is authorized by this plan.
 
 Document self-review covered specification rows, cross-task types, action/endpoint completeness,
 failure tests and size. The account lifecycle proof belongs to the real app task; early native

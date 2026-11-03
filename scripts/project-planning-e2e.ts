@@ -1,29 +1,43 @@
 // Drives local planning services on disposable profiles. No live provider or account is used.
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { once } from "node:events";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { createOpenBotLogger } from "@openbot/logging";
-import { type PlanningReport, verifyPlanningReport } from "./project-planning/report";
+import { runPlanningWorker } from "./project-planning/owned-worker";
+import { type PlanningReport, verifyPlanningEvidence, verifyPlanningReport } from "./project-planning/report";
 
 if (process.versions.bun) {
-  const child = spawn("node", ["--import", "tsx", import.meta.filename, ...process.argv.slice(2)], {
-    stdio: "inherit",
-  });
-  const [code] = await once(child, "exit");
-  process.exit(typeof code === "number" ? code : 1);
+  process.exit(
+    await runPlanningWorker(
+      "node",
+      ["--import", "tsx", import.meta.filename, ...process.argv.slice(2)],
+      resolve(import.meta.dirname, ".."),
+    ),
+  );
 }
 const logger = createOpenBotLogger("project-planning-e2e");
 const args = process.argv.slice(2);
 const root = resolve(import.meta.dirname, "..");
-if (args[0] === "--identity-worker" && args.length === 2) {
+if (args[0] === "--worker-failure-probe" && args.length === 1) {
+  process.kill(process.pid, "SIGKILL");
+} else if (args[0] === "--group" && (args[1] === "files" || args[1] === "remote")) {
+  if (args.length !== 4 || !args[2]?.startsWith("--instance=") || args[3] !== "--allow-mutations")
+    throw new Error("Application evidence requires --instance=<name> --allow-mutations.");
+  process.exit(
+    await runPlanningWorker(
+      "bun",
+      ["scripts/project-planning-electron-e2e.ts", args[2], args[3], `--case=${args[1]}`],
+      root,
+    ),
+  );
+} else if (args[0] === "--identity-worker" && args.length === 2) {
   const { openIdentityProfile } = await import("./project-planning/identity");
   const identity = await openIdentityProfile(args[1] ?? "");
   // Machine-readable: private child-process result, synthetic profile identifiers only.
   process.stdout.write(`${JSON.stringify(identity)}\n`);
 } else if (args[0] === "--verify-report" && args.length === 2) {
-  verifyPlanningReport(JSON.parse(await readFile(args[1] ?? "", "utf8")));
+  verifyPlanningEvidence(JSON.parse(await readFile(args[1] ?? "", "utf8")));
   logger.info("Planning report verified.");
 } else if (
   (args.length === 2 || (args.length === 3 && args[2]?.startsWith("--isolated-display="))) &&

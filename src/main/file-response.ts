@@ -1,12 +1,17 @@
 import { open } from "node:fs/promises";
 import { Effect } from "effect";
 import { runCauseEffect } from "../backend/effect-boundary";
+import type { ProtectedProfileFiles } from "../backend/protected-profile-files";
 import { RemoteWorkflowError, remoteCall } from "./remote-service-effects";
 
 const CHUNK_BYTES = 64 * 1_024;
 
 /** Streams a file without keeping its whole contents in memory. Open failures still let the caller answer 404. */
-export const fileResponse = Effect.fn("FileResponse.open")(function* (path: string, headers: Record<string, string>) {
+export const fileResponse = Effect.fn("FileResponse.open")(function* (
+  path: string,
+  headers: Record<string, string>,
+  protectedFiles: ProtectedProfileFiles,
+) {
   // The response stream owns the handle after construction. Before that, the operation owns it.
   let transferred = false;
   return yield* Effect.acquireUseRelease(
@@ -16,6 +21,9 @@ export const fileResponse = Effect.fn("FileResponse.open")(function* (path: stri
         const close = Effect.fn("FileResponse.close")(() => remoteCall(() => file.close()));
         const stats = yield* remoteCall(() => file.stat());
         if (!stats.isFile()) return yield* new RemoteWorkflowError({ cause: new Error("Not a regular file.") });
+        yield* protectedFiles
+          .assertOpenedFileAllowed(path, stats)
+          .pipe(Effect.mapError((error) => new RemoteWorkflowError({ cause: error })));
         const pull = Effect.fn("FileResponse.read")(function* (
           controller: ReadableStreamDefaultController<Uint8Array>,
         ) {

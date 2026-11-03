@@ -19,6 +19,7 @@ import { app, session } from "electron";
 import type { AgentService } from "../backend/agent-service";
 import { runCauseEffect } from "../backend/effect-boundary";
 import type { MailboxStore } from "../backend/mailbox-store";
+import type { ProtectedProfileFiles } from "../backend/protected-profile-files";
 import { attachmentCorsHeaders, attachmentDocumentHeaders, chatVisualResponse } from "./chat-visual-protocol";
 import { buildContentSecurityPolicy, readSelfHostedSignalOrigin } from "./content-security-policy";
 import { filePreviewPages } from "./file-preview-pages";
@@ -82,14 +83,18 @@ export function configureAttachmentProtocol({ mailbox, agents, remoteServers }: 
       const attachment = id ? await runCauseEffect(mailbox.resolveAttachment(id)) : null;
       if (!attachment) return new Response("Not found", { status: 404 });
       return await runCauseEffect(
-        fileResponse(attachment.path, {
-          "Content-Type": attachment.mimeType,
-          "Cache-Control": "no-store",
-          ...attachmentCorsHeaders(request.headers.get("Origin")),
-          ...attachmentDocumentHeaders(attachment.mimeType),
-          "X-Content-Type-Options": "nosniff",
-          "Content-Disposition": "inline",
-        }),
+        fileResponse(
+          attachment.path,
+          {
+            "Content-Type": attachment.mimeType,
+            "Cache-Control": "no-store",
+            ...attachmentCorsHeaders(request.headers.get("Origin")),
+            ...attachmentDocumentHeaders(attachment.mimeType),
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": "inline",
+          },
+          agents.protectedFiles,
+        ),
       );
     } catch {
       return new Response("Not found", { status: 404 });
@@ -158,11 +163,15 @@ export function configureAttachmentProtocol({ mailbox, agents, remoteServers }: 
         return new Response("Not found", { status: 404 });
       }
       return await runCauseEffect(
-        fileResponse(avatar.path, {
-          "Content-Type": avatar.mimeType,
-          "Cache-Control": "private, max-age=31536000, immutable",
-          "X-Content-Type-Options": "nosniff",
-        }),
+        fileResponse(
+          avatar.path,
+          {
+            "Content-Type": avatar.mimeType,
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+          },
+          agents.protectedFiles,
+        ),
       );
     } catch {
       return new Response("Not found", { status: 404 });
@@ -191,11 +200,16 @@ export function configureAttachmentProtocol({ mailbox, agents, remoteServers }: 
 }
 
 export interface ServerLogoProtocolDependencies {
+  protectedFiles: ProtectedProfileFiles;
   teamStore: TeamStore;
   remoteServers: RemoteServerManager;
 }
 
-export function configureServerLogoProtocols({ teamStore, remoteServers }: ServerLogoProtocolDependencies): void {
+export function configureServerLogoProtocols({
+  teamStore,
+  remoteServers,
+  protectedFiles,
+}: ServerLogoProtocolDependencies): void {
   session.defaultSession.protocol.handle("openbot-server-logo", async (request) => {
     try {
       const url = new URL(request.url);
@@ -204,11 +218,15 @@ export function configureServerLogoProtocols({ teamStore, remoteServers }: Serve
         return new Response("Not found", { status: 404 });
       }
       return await runCauseEffect(
-        fileResponse(logo.path, {
-          "Content-Type": logo.mimeType,
-          "Cache-Control": "private, max-age=31536000, immutable",
-          "X-Content-Type-Options": "nosniff",
-        }),
+        fileResponse(
+          logo.path,
+          {
+            "Content-Type": logo.mimeType,
+            "Cache-Control": "private, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
+          },
+          protectedFiles,
+        ),
       );
     } catch {
       return new Response("Not found", { status: 404 });

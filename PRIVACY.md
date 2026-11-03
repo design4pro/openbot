@@ -1583,3 +1583,23 @@ Registry install records remain on the host, separate from conversations and cre
 An authorized remote administrator can install, update, cancel, or remove a registry runtime on
 the host through the encrypted Team connection. Removal does not delete agent configuration,
 credentials, or conversations. The existing cloud service does not store those files.
+
+## Protected local planning
+
+Local project plans, milestones, tickets, saved drafts, and manual review evidence stay in the host's
+application SQLite database. A durable profile identity owns them independently of OpenBot accounts.
+Sign-in, sign-out, and account changes do not transfer ownership. A complete, consistent profile copy
+preserves it; a new empty profile has another owner. An account alone cannot recover a lost profile.
+
+Work exposes these records only for the active local host through authorized main application
+windows. They are not sent to Cloudflare, Team clients, agents, conversation history, memories,
+search, normal exports, or support diagnostics. Aggregate storage totals can include database bytes.
+The database and its SQLite companion files are excluded from application-mediated transfers even
+when an agent workspace or additional folder overlaps the profile.
+
+Private planning excludes OpenBot screen viewing and native control. Entry is refused on an unproved
+configuration or while control cannot be confirmed stopped. Leaving requires every private window to
+save or explicitly discard input, followed by actual renderer destruction before control can resume.
+This does not protect against a process with your operating-system user's full access to the profile
+or display. Platform support and remaining evidence limits are listed in
+[the S1-local evidence matrix](plans/011-project-workspaces/s1-local-evidence.md).
