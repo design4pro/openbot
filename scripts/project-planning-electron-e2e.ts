@@ -256,7 +256,6 @@ try {
   process.exitCode = 1;
   logger.error("Electron proof failed.", { failure: report.failure });
 } finally {
-  clearTimeout(watchdog);
   if (inspector) {
     const diagnostics = await inspector
       .evaluate("globalThis.__planningFixture?.supportDiagnostics ?? null")
@@ -284,4 +283,5 @@ try {
   inspector?.close();
   await writeFile(join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
   logger.info("Electron evidence written.", { output, passed: report.passed });
+  clearTimeout(watchdog);
 }
