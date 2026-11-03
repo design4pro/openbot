@@ -269,7 +269,7 @@ export class MailboxStore {
 
   constructor(userDataPath: string, sharedRoot: string, database = new OpenBotDatabase(userDataPath)) {
     this.#statePath = join(userDataPath, "mailbox.json");
-    this.#files = new AttachmentFiles({ userDataPath, sharedRoot });
+    this.#files = new AttachmentFiles({ userDataPath, sharedRoot, protectedFiles: database.protectedFiles });
     this.#database = database;
   }
 

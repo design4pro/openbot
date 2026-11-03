@@ -95,6 +95,8 @@ export class ScreenCaptureFailed extends Schema.TaggedError<ScreenCaptureFailed>
  * the operating system permission. It captures only after the user approves the request.
  */
 export interface ScreenCaptureHost {
+  /** Holds public admission through approval and the attachment commit, not only native capture. */
+  withCaptureLease<A, E, R>(operation: Effect.Effect<A, E, R>): Effect.Effect<A, E | ScreenCaptureFailed, R>;
   listSources(): Effect.Effect<ScreenCaptureSources, ScreenCaptureFailed>;
   capture(request: ScreenCaptureRequest): Effect.Effect<ScreenCaptureImage, ScreenCaptureFailed>;
 }

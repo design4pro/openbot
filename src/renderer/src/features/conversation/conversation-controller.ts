@@ -209,16 +209,18 @@ export function createStableConversationState(
       };
     },
   );
-  if (storedDrafts && persistDrafts)
-    writeComposerDraftsOnChange({
-      drafts,
-      channelDrafts,
-      threadDrafts,
-      editingAgentId,
-      editingServerId,
-      editingDraftBackup,
-      unsentTexts: pendingSends.unsentTexts,
-    });
+  const draftPersistence =
+    storedDrafts && persistDrafts
+      ? writeComposerDraftsOnChange({
+          drafts,
+          channelDrafts,
+          threadDrafts,
+          editingAgentId,
+          editingServerId,
+          editingDraftBackup,
+          unsentTexts: pendingSends.unsentTexts,
+        })
+      : null;
   const [composerErrors, setComposerErrors] = createSignal<Record<string, string>>({});
   /** The code of each composer error that came from a failure, keyed like `composerErrors`. */
   const [composerErrorReferences, setComposerErrorReferences] = createSignal<Record<string, UserErrorDetails>>({});
@@ -292,6 +294,7 @@ export function createStableConversationState(
   });
 
   return {
+    flushComposerDrafts: () => draftPersistence?.flush() ?? !persistDrafts,
     startSkillCreation(target: { serverId: string; agentId: string }) {
       const key = composerDraftKey(target);
       setDrafts((current) => ({ ...current, [key]: appendSkillCreationRequest(current[key] ?? EMPTY_DRAFT) }));

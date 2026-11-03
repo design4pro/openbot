@@ -41,6 +41,10 @@ export class BrowserPictureInPicture {
     this.#options = options;
   }
 
+  setMainWindow(window: BrowserWindow): void {
+    this.#options.mainWindow = window;
+  }
+
   readonly open = Effect.fn("BrowserPictureInPicture.open")(function* (
     this: BrowserPictureInPicture,
     savedBounds?: BrowserBounds,

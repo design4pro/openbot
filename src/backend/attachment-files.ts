@@ -1,18 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import {
-  copyFile,
-  type FileHandle,
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
+
+import { type FileHandle, lstat, mkdir, open, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import { assertSupportedAttachmentName, attachmentMimeTypeForName } from "@openbot/contracts/attachment-files";
 import { ATTACHMENT_LIMITS, INPUT_LIMITS } from "@openbot/contracts/input-limits";
@@ -26,7 +14,8 @@ import type {
 import { sourceText } from "@openbot/i18n/source";
 import { Effect } from "effect";
 import { type AttachmentOperationError, attachmentCall, attachmentFailure, attachmentSync } from "./attachment-effects";
-import { sha256File } from "./file-hash";
+import { runCauseEffect } from "./effect-boundary";
+import { ProtectedProfileFiles } from "./protected-profile-files";
 import { isWithin } from "./workspace-paths";
 
 const MAX_ATTACHMENTS = INPUT_LIMITS.attachments;
@@ -98,15 +87,19 @@ export interface GeneratedAttachmentSource {
 export interface AttachmentFilesOptions {
   userDataPath: string;
   sharedRoot: string;
+  protectedFiles?: ProtectedProfileFiles;
 }
 
 /** Owns managed attachment files, verification, sidecars, and cleanup. Never imports MailboxStore or writes mailbox state. */
 export class AttachmentFiles {
   readonly #draftsRoot: string;
+  readonly #protectedFiles: ProtectedProfileFiles;
   readonly #transfersRoot: string;
 
   constructor(options: AttachmentFilesOptions) {
     this.#draftsRoot = join(options.userDataPath, "attachment-drafts");
+    this.#protectedFiles =
+      options.protectedFiles ?? new ProtectedProfileFiles(join(options.userDataPath, "openbot.db"));
     this.#transfersRoot = join(options.sharedRoot, "Transfers");
   }
 
@@ -192,10 +185,10 @@ export class AttachmentFiles {
   }).bind(this);
 
   resolveDraft(attachment: StoredAttachment) {
-    return resolveManagedAttachmentEffect(this.#draftsRoot, attachment);
+    return resolveManagedAttachmentEffect(this.#draftsRoot, attachment, this.#protectedFiles);
   }
   resolveTransfer(attachment: StoredAttachment) {
-    return resolveManagedAttachmentEffect(this.#transfersRoot, attachment);
+    return resolveManagedAttachmentEffect(this.#transfersRoot, attachment, this.#protectedFiles);
   }
 
   readonly prepareDrafts = Effect.fn("AttachmentFiles.prepareDrafts")(function* (
@@ -233,7 +226,10 @@ export class AttachmentFiles {
           yield* attachmentCall(() => mkdir(targetDirectory, { recursive: true, mode: 0o700 })).pipe(
             Effect.uninterruptible,
           );
-          yield* attachmentCall(() => copyFile(source.path, targetPath)).pipe(Effect.uninterruptible);
+          yield* this.#protectedFiles
+            .copyAllowedFile(source.path, targetPath)
+            .pipe(Effect.mapError(attachmentFailure))
+            .pipe(Effect.uninterruptible);
           const copied = yield* attachmentCall(() => stat(targetPath));
           if (copied.size > MAX_FILE_BYTES) {
             yield* attachmentCall(() => rm(targetDirectory, { recursive: true, force: true })).pipe(
@@ -254,7 +250,9 @@ export class AttachmentFiles {
               name,
               copied.size,
               targetPath,
-              yield* sha256File(targetPath).pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
+              yield* this.#protectedFiles
+                .sha256AllowedFile(targetPath)
+                .pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
             ),
             createdAt: new Date().toISOString(),
           });
@@ -334,7 +332,9 @@ export class AttachmentFiles {
             while (true) {
               const candidate = uniqueName(sourceName, usedNames);
               try {
-                await copyFile(source.path, join(temporaryRoot, candidate), constants.COPYFILE_EXCL);
+                await runCauseEffect(
+                  this.#protectedFiles.copyAllowedFile(source.path, join(temporaryRoot, candidate), true),
+                );
                 return candidate;
               } catch (error) {
                 if (error === null || typeof error !== "object" || !("code" in error) || error.code !== "EEXIST") {
@@ -355,7 +355,9 @@ export class AttachmentFiles {
               name,
               copied.size,
               join(finalRoot, name),
-              yield* sha256File(targetPath).pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
+              yield* this.#protectedFiles
+                .sha256AllowedFile(targetPath)
+                .pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
             ),
           );
         }
@@ -449,7 +451,9 @@ export class AttachmentFiles {
               entry.name,
               copied.size,
               entry.targetPath,
-              yield* sha256File(entry.targetPath).pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
+              yield* this.#protectedFiles
+                .sha256AllowedFile(entry.targetPath)
+                .pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
             ),
             ...(input.ownerAgentId ? { ownerAgentId: input.ownerAgentId } : {}),
             ...(input.ownerThreadId !== undefined ? { ownerThreadId: input.ownerThreadId } : {}),
@@ -507,7 +511,11 @@ export class AttachmentFiles {
           Effect.uninterruptible,
         );
 
-        if (source) yield* attachmentCall(() => copyFile(source.path, targetPath)).pipe(Effect.uninterruptible);
+        if (source)
+          yield* this.#protectedFiles
+            .copyAllowedFile(source.path, targetPath)
+            .pipe(Effect.mapError(attachmentFailure))
+            .pipe(Effect.uninterruptible);
         else if (bytes)
           yield* attachmentCall(() => writeFile(targetPath, bytes, { mode: 0o600 })).pipe(Effect.uninterruptible);
         else throw new Error("Generated image bytes are missing.");
@@ -519,7 +527,9 @@ export class AttachmentFiles {
             name,
             stored.size,
             targetPath,
-            yield* sha256File(targetPath).pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
+            yield* this.#protectedFiles
+              .sha256AllowedFile(targetPath)
+              .pipe(Effect.mapError((error) => attachmentFailure(error.cause))),
             input.mimeType,
           ),
           ...(input.ownerAgentId ? { ownerAgentId: input.ownerAgentId } : {}),
@@ -563,6 +573,7 @@ const resolveManagedAttachmentEffect = Effect.fn("Attachments.resolveManagedAtta
   function* (
     root: string,
     attachment: StoredAttachment,
+    protectedFiles: ProtectedProfileFiles,
   ): Effect.fn.Return<{ path: string; mimeType: string; name: string } | null, AttachmentOperationError> {
     try {
       const [canonicalRoot, canonicalPath] = yield* attachmentCall(() =>
@@ -571,9 +582,11 @@ const resolveManagedAttachmentEffect = Effect.fn("Attachments.resolveManagedAtta
       if (!isWithin(canonicalRoot, canonicalPath)) return null;
       const metadata = yield* attachmentCall(() => stat(canonicalPath));
       if (!metadata.isFile() || metadata.size !== attachment.size) return null;
+      yield* protectedFiles.assertOpenedFileAllowed(canonicalPath, metadata).pipe(Effect.mapError(attachmentFailure));
       if (
-        (yield* sha256File(canonicalPath).pipe(Effect.mapError((error) => attachmentFailure(error.cause)))) !==
-        attachment.sha256
+        (yield* protectedFiles
+          .sha256AllowedFile(canonicalPath)
+          .pipe(Effect.mapError((error) => attachmentFailure(error.cause)))) !== attachment.sha256
       )
         return null;
       return { path: canonicalPath, mimeType: attachment.mimeType, name: attachment.name };

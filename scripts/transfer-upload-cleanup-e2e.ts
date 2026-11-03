@@ -1,3 +1,4 @@
+import { ProtectedProfileFiles } from "../src/backend/protected-profile-files";
 // Run: bun scripts/transfer-upload-cleanup-e2e.ts
 // Report: .openbot-build/transfer-upload-cleanup-e2e.json
 
@@ -129,6 +130,7 @@ function service(uploadDirectory: string): InstanceTransferService {
     signedInProviders: () => [],
   };
   const options: InstanceTransferOptions = {
+    protectedFiles: new ProtectedProfileFiles(join(dirname(uploadDirectory), "openbot.db")),
     uploadDirectory,
     sharedRoot: join(dirname(uploadDirectory), "shared"),
     appVersion: "e2e",

@@ -83,6 +83,7 @@ import type { VaultService } from "../vault-service";
 
 type TeamApiAgentMethods = Pick<
   AgentService,
+  | "protectedFiles"
   | "preferredProvider"
   | "newAgentProvider"
   | "getStatus"
@@ -291,7 +292,7 @@ export type TeamApiAgentImport = Pick<AgentImportService, "stageUpload" | "apply
 /** Its presence is what `#protocolSupport` advertises `instance-transfer-v1` on. Only admins use it. */
 export type TeamApiInstanceTransfer = Pick<
   InstanceTransferService,
-  "summary" | "exportForMember" | "stageUpload" | "apply" | "discard"
+  "summary" | "exportForMember" | "stageUpload" | "apply" | "discard" | "protectedFiles"
 >;
 
 /**

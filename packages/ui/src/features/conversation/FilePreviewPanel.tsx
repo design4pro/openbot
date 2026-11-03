@@ -266,7 +266,11 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
           )}
         </Show>
         <Show when={file() && props.allowExternalOpen !== false}>
-          <HeaderButton label={t("preview.panel.openExternally")} onClick={props.onOpenExternally}>
+          <HeaderButton
+            label={t("preview.openCopy")}
+            tooltip={t("preview.openCopyHint")}
+            onClick={props.onOpenExternally}
+          >
             <ExternalLink class="browser-toolbar-icon" />
           </HeaderButton>
         </Show>
@@ -391,8 +395,13 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
             <strong>{t("preview.unsupported.title")}</strong>
             <Show when={props.allowExternalOpen !== false}>
               <span>{t("preview.unsupported.description")}</span>
-              <Button variant="outline" type="button" onClick={props.onOpenExternally}>
-                {t("preview.unsupported.openExternally")}
+              <Button
+                variant="outline"
+                type="button"
+                title={t("preview.openCopyHint")}
+                onClick={props.onOpenExternally}
+              >
+                {t("preview.openCopy")}
               </Button>
             </Show>
           </div>
@@ -405,6 +414,7 @@ export default function FilePreviewPanel(props: FilePreviewPanelProps) {
 /** An icon-only header button. Its label names it for a screen reader and in a tooltip. */
 function HeaderButton(props: {
   label: string;
+  tooltip?: string;
   pressed?: boolean;
   onClick: () => void;
   "data-cuelume-tap"?: string;
@@ -412,7 +422,7 @@ function HeaderButton(props: {
 }) {
   const pressed = () => (props.pressed === undefined ? undefined : String(props.pressed));
   return (
-    <LabelTooltip content={props.label}>
+    <LabelTooltip content={props.tooltip ?? props.label}>
       <LabelTooltipTrigger
         as={Button}
         variant="ghost"

@@ -22,6 +22,9 @@ import {
   HostedSiteEventLog,
   type PendingHostedSiteTerminalEvent,
 } from "./database/hosted-site-event-log";
+import { LocalPlanningDrafts } from "./database/local-planning-drafts";
+import { LocalPlanningRecords } from "./database/local-planning-records";
+import { LocalProfileIdentity } from "./database/local-profile-identity";
 import {
   MailboxProjection,
   type MailboxProjectionChanges,
@@ -40,6 +43,7 @@ import {
 import { type ProviderSession, ProviderSessions } from "./database/provider-sessions";
 import { ThreadReplay } from "./database/thread-replay";
 import { type StoredThreadSummary, ThreadSummaries } from "./database/thread-summaries";
+import { ProtectedProfileFiles } from "./protected-profile-files";
 
 // Declared in this module before the split and part of the frozen public surface, so it stays
 // reachable from here rather than only from the controller that owns it now. Structural `Pick<...>`
@@ -70,6 +74,10 @@ export type { StoredThreadSummary } from "./database/thread-summaries";
 export class OpenBotDatabase {
   readonly #core: DatabaseCore;
   readonly usage: AgentUsage;
+  readonly localIdentity: LocalProfileIdentity;
+  readonly localPlanningRecords: LocalPlanningRecords;
+  readonly localPlanningDrafts: LocalPlanningDrafts;
+  readonly protectedFiles: ProtectedProfileFiles;
   readonly #conversations: ConversationQueries;
   readonly #roster: AgentRoster;
   readonly #conversationWrites: ConversationWriter;
@@ -84,6 +92,10 @@ export class OpenBotDatabase {
   constructor(readonly userDataPath: string) {
     this.#core = new DatabaseCore({ userDataPath });
     this.usage = new AgentUsage(this.#core);
+    this.localIdentity = new LocalProfileIdentity(this.#core);
+    this.localPlanningRecords = new LocalPlanningRecords(this.#core);
+    this.localPlanningDrafts = new LocalPlanningDrafts(this.#core);
+    this.protectedFiles = new ProtectedProfileFiles(this.#core.path);
     this.#conversations = new ConversationQueries({ core: this.#core });
     this.#roster = new AgentRoster({ core: this.#core });
     this.#conversationWrites = new ConversationWriter({ core: this.#core, roster: this.#roster });
@@ -118,6 +130,15 @@ export class OpenBotDatabase {
     project: (db: DatabaseSync, sequences: number[]) => T,
   ): T {
     return this.#core.dispatch(commandId, events, project);
+  }
+
+  dispatchChecked<T>(
+    commandId: string,
+    events: OrchestrationEventInput[],
+    check: (db: DatabaseSync, replay: boolean) => void,
+    project: (db: DatabaseSync, sequences: number[]) => T,
+  ): T {
+    return this.#core.dispatchChecked(commandId, events, check, project);
   }
 
   commandResult(commandId: string): unknown | undefined {

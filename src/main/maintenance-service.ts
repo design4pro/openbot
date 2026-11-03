@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import { arch, release as osRelease, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -97,7 +97,10 @@ export const exportOpenBotData = Effect.fn("Archive.exportOpenBotData")(function
           yield* archiveCall(() => mkdir(dirname(target), { recursive: true, mode: 0o700 })).pipe(
             Effect.uninterruptible,
           );
-          yield* archiveCall(() => copyFile(attachment.sourcePath, target)).pipe(Effect.uninterruptible);
+          yield* context.service.protectedFiles.copyAllowedFile(attachment.sourcePath, target).pipe(
+            Effect.mapError((error) => archiveFailure(error.cause)),
+            Effect.uninterruptible,
+          );
         }
         if (process.platform === "win32") {
           yield* archiveCall(() =>

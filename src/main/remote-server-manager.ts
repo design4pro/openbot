@@ -156,6 +156,7 @@ export interface LocalServerAttachInput {
 }
 
 interface RemoteServerEvents {
+  selectionStarted: [];
   directoryInvalidated: [];
   changed: [servers: ServerSummary[]];
   agent: [serverId: string, event: AgentEvent, bufferedLive?: boolean];
@@ -311,7 +312,7 @@ export class RemoteServerManager extends EventEmitter<RemoteServerEvents> {
     options: RemoteServerManagerOptions = {},
   ) {
     super();
-    this.#store = new RemoteServerStore({ path, cipher });
+    this.#store = new RemoteServerStore({ path, cipher, onSelectionStarted: () => this.emit("selectionStarted") });
     this.#appVersion = options.appVersion ?? null;
     this.#connections = new RemoteServerConnections({
       appVersion: this.#appVersion,
@@ -765,7 +766,10 @@ export class RemoteServerManager extends EventEmitter<RemoteServerEvents> {
   }).bind(this);
 
   select(serverId: string): Effect.Effect<ServerSummary[], RemoteWorkflowError> {
-    return this.#owned(this.#selections.withPermit(Effect.uninterruptible(this.#selectEffect(serverId))));
+    return Effect.suspend(() => {
+      this.emit("selectionStarted");
+      return this.#owned(this.#selections.withPermit(Effect.uninterruptible(this.#selectEffect(serverId))));
+    });
   }
 
   readonly #selectEffect = Effect.fn("RemoteManager.select")(function* (this: RemoteServerManager, serverId: string) {

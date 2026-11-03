@@ -67,9 +67,9 @@ export class DatabaseCore {
     const configured = yield* Effect.result(
       Effect.gen({ self: this }, function* () {
         yield* storedSync(() => {
+          db.exec("PRAGMA busy_timeout = 5000");
           db.exec("PRAGMA journal_mode = WAL");
           db.exec("PRAGMA foreign_keys = ON");
-          db.exec("PRAGMA busy_timeout = 5000");
           db.exec("PRAGMA synchronous = NORMAL");
           db.function(COLLAPSE_WHITESPACE_FUNCTION, { deterministic: true }, (value) =>
             typeof value === "string" ? value.replace(/\s+/gu, " ") : value,
@@ -157,6 +157,30 @@ export class DatabaseCore {
           JSON.stringify(result ?? null),
         );
       }
+      if (ownsTransaction) db.exec("COMMIT");
+      return result;
+    } catch (error) {
+      if (ownsTransaction && db.isTransaction) db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /** Validates current authority and command integrity before a receipt can be replayed. */
+  dispatchChecked<T>(
+    commandId: string,
+    events: OrchestrationEventInput[],
+    check: (db: DatabaseSync, replay: boolean) => void,
+    project: (db: DatabaseSync, sequences: number[]) => T,
+  ): T {
+    const db = this.connection;
+    const ownsTransaction = !db.isTransaction;
+    if (ownsTransaction) db.exec("BEGIN IMMEDIATE");
+    try {
+      const replay = Boolean(
+        db.prepare("SELECT 1 FROM orchestration_command_receipts WHERE command_id=?").get(commandId),
+      );
+      check(db, replay);
+      const result = this.dispatch(commandId, events, project);
       if (ownsTransaction) db.exec("COMMIT");
       return result;
     } catch (error) {

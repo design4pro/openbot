@@ -1,3 +1,5 @@
+import { runCauseEffect } from "../backend/effect-boundary";
+import type { ProtectedProfileFiles } from "../backend/protected-profile-files";
 // Instance transfer: the agents and app settings of this computer in one `.zip` file, and the import
 // of such a file on another computer. See `docs/architecture/instance-transfer.md`.
 //
@@ -11,7 +13,7 @@
 // here and never replace an MCP server, provider or custom agent that this computer has.
 
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, open, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { AgentProviderId } from "@openbot/contracts/agent-providers";
 import { INPUT_LIMITS } from "@openbot/contracts/input-limits";
@@ -161,6 +163,7 @@ interface InstanceTransferSettings {
 }
 
 export interface InstanceTransferOptions {
+  protectedFiles: ProtectedProfileFiles;
   agents: InstanceTransferAgents;
   skills: AgentImportSkills;
   settings: InstanceTransferSettings;
@@ -202,6 +205,10 @@ export class InstanceTransferService {
   constructor(private readonly options: InstanceTransferOptions) {
     this.#timezone = options.timezone ?? (() => Intl.DateTimeFormat().resolvedOptions().timeZone);
     this.#now = options.now ?? (() => new Date());
+  }
+
+  get protectedFiles() {
+    return this.options.protectedFiles;
   }
 
   /** What each agent would carry: the export screen shows it before anything is written. */
@@ -259,7 +266,10 @@ export class InstanceTransferService {
       if (resolved) {
         avatar = `${prefix}avatar.${AVATAR_EXTENSIONS[resolved.mimeType]}`;
         const avatarPath = resolved.path;
-        entries.push({ name: avatar, read: () => readFile(avatarPath) });
+        entries.push({
+          name: avatar,
+          read: () => runCauseEffect(this.options.protectedFiles.readAllowedFile(avatarPath)),
+        });
       }
 
       const skills: string[] = [];
@@ -278,7 +288,10 @@ export class InstanceTransferService {
         skills.push(folder);
         for (const file of skill.files) {
           bytes += file.size;
-          entries.push({ name: `${folder}/${file.name}`, read: () => readFile(file.path) });
+          entries.push({
+            name: `${folder}/${file.name}`,
+            read: () => runCauseEffect(this.options.protectedFiles.readAllowedFile(file.path)),
+          });
         }
       }
 
@@ -291,7 +304,7 @@ export class InstanceTransferService {
             bytes += file.size;
             entries.push({
               name: `${files}/${file.name}`,
-              read: () => readFile(file.path),
+              read: () => runCauseEffect(this.options.protectedFiles.readAllowedFile(file.path)),
               executable: file.executable,
             });
           }
@@ -351,7 +364,7 @@ export class InstanceTransferService {
         bytes += file.size;
         entries.push({
           name: `${SHARED_FOLDER}/${file.name}`,
-          read: () => readFile(file.path),
+          read: () => runCauseEffect(this.options.protectedFiles.readAllowedFile(file.path)),
           executable: file.executable,
         });
       }

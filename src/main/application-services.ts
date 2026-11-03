@@ -8,6 +8,8 @@ import { AgentApiKeys } from "../backend/agent-api-keys";
 import { AgentDatabaseSupervisor } from "../backend/agent-data/agent-database-supervisor";
 import { AgentTables } from "../backend/agent-data/agent-tables";
 import { AgentRoutineStore } from "../backend/agent-routine-store";
+import { LocalPlanningAuthority } from "../backend/local-planning/local-planning-authority";
+import { LocalPlanningService } from "../backend/local-planning/local-planning-service";
 import { DiscordConnectFailed, toDiscordConnectFailed } from "../backend/messaging/discord/discord-connect";
 import { SlackConnectFailed, toSlackConnectFailed } from "../backend/messaging/slack/slack-connect";
 import { routineFlowRoutines } from "../backend/routine-flows/routine-flow-routines";
@@ -35,10 +37,15 @@ import {
   HostedUpdateAdapter,
 } from "./hosted-update-adapter";
 import { LicenseDesktopService } from "./license-service";
+import { LocalPlanningMainService } from "./local-planning-service";
+import { LocalPlanningWindows } from "./local-planning-windows";
 import { LocalSignInWindows } from "./local-sign-in-window";
 import { LocalSkillLibrary } from "./local-skill-library";
 import { localSkillTools } from "./local-skill-tools";
 import { MAC_PERMISSION_URLS } from "./mac-permission-urls";
+import { PrivatePlanningAdmission, PrivatePlanningError } from "./private-planning-admission";
+import { PrivatePlanningNative } from "./private-planning-native";
+import { privatePlanningSupported } from "./private-planning-support";
 import { PushNotificationStore } from "./push-notification-store";
 import { DESKTOP_USE_MS } from "./push-notifications";
 import { RemoteWorkflowError, toRemoteWorkflowError } from "./remote-service-effects";
@@ -524,6 +531,9 @@ export interface ApplicationServiceContext {
 
 /** Everything the entry point wires up, registers IPC handlers against, and shuts down. */
 export interface ApplicationServices {
+  bindMainWindow(window: BrowserWindow): void;
+  localPlanning: LocalPlanningMainService;
+  localPlanningWindows: LocalPlanningWindows;
   service: AgentService;
   routineFlows: RoutineFlowsHandle;
   workflows: WorkflowsHandle;
@@ -1004,14 +1014,22 @@ export async function createApplicationServices({
     profileTimer = setInterval(() => void refreshAccountProfile(), REMOTE_ACCOUNT_CHECK_INTERVAL_MS);
     profileTimer.unref();
   };
-  if (mainWindow.isFocused()) startProfileTimer();
-  mainWindow.on("focus", startProfileTimer);
-  mainWindow.on("blur", stopProfileTimer);
+  let profileWindow = mainWindow;
+  function bindProfileWindow(window: BrowserWindow): void {
+    profileWindow.removeListener("focus", startProfileTimer);
+    profileWindow.removeListener("blur", stopProfileTimer);
+    stopProfileTimer();
+    profileWindow = window;
+    if (profileWindow.isFocused()) startProfileTimer();
+    profileWindow.on("focus", startProfileTimer);
+    profileWindow.on("blur", stopProfileTimer);
+  }
+  bindProfileWindow(mainWindow);
   teardown.push(TEARDOWN_ORDER.updater, "account profile refresh", () => {
     profileRefreshActive = false;
     stopProfileTimer();
-    mainWindow.removeListener("focus", startProfileTimer);
-    mainWindow.removeListener("blur", stopProfileTimer);
+    profileWindow.removeListener("focus", startProfileTimer);
+    profileWindow.removeListener("blur", stopProfileTimer);
     centralAuth.stopProfileRefresh();
   });
   // Before the agents load, so the first check of an agent that follows a default reads the saved one.
@@ -1019,6 +1037,21 @@ export async function createApplicationServices({
     join(app.getPath("userData"), AGENT_DEFAULTS_PREFERENCE_FILE),
   );
   await runCauseEffect(agentDefaults.load());
+  const localPlanningWindows = new LocalPlanningWindows({ replace: windows.replacePrivateRenderers });
+  const privatePlanningAdmission = new PrivatePlanningAdmission({
+    checkQuiescent: () =>
+      Effect.gen(function* () {
+        if (!(yield* privatePlanningSupported(cuaDriver.executablePath(), remoteDesktopRuntime)))
+          return yield* new PrivatePlanningError({ code: "privacy_busy" });
+        yield* privatePlanningNative.checkQuiescent();
+      }),
+    privateRenderersDestroyed: () => localPlanningWindows.privateRenderersDestroyed(),
+  });
+  const privatePlanningNative = new PrivatePlanningNative({
+    admission: privatePlanningAdmission,
+    stateDirectory: join(app.getPath("userData"), "private-native-lifetimes"),
+    nativeArguments: () => [cuaDriver.socketPath(), join(app.getPath("userData"), "remote-desktop-runtime")],
+  });
   const store = new AgentStore(
     app.getPath("userData"),
     homedir(),
@@ -1128,9 +1161,7 @@ export async function createApplicationServices({
   await runCauseEffect(browser.restore(store.list().map((agent) => ({ id: agent.id, threadId: agent.threadId }))));
   performance.mark("openbot:services.browser");
   const browserPictureInPicture = new BrowserPictureInPicture({
-    // A value, deliberately: the window this is docked to is the one that exists now. The event
-    // callback below is the opposite case and re-reads, because it fires long after a macOS window
-    // close and rebuild would have made this reference stale.
+    // Rebound together with the browser when private exit recreates the main window.
     mainWindow,
     browser,
     preloadPath: join(__dirname, "../preload/index.cjs"),
@@ -1145,7 +1176,7 @@ export async function createApplicationServices({
   teardown.push(TEARDOWN_ORDER.browserPictureInPicture, "picture in picture", () => browserPictureInPicture.destroy());
   const localSignIn = new LocalSignInWindows();
   teardown.push(TEARDOWN_ORDER.localSignIn, "the local sign-in window", () => Effect.runPromise(localSignIn.discard()));
-  // A value, as for Picture in Picture: the overlay is a view in the window that the browser shows its pages in.
+  // The dock and its sender role follow the browser parent on main-window replacement.
   const browserDock = new BrowserDockOverlay({
     mainWindow,
     preloadPath: join(__dirname, "../preload/index.cjs"),
@@ -1546,6 +1577,7 @@ export async function createApplicationServices({
     });
   };
   const cuaDriver = new CuaDriverRuntime({
+    privatePlanningNative,
     executable: await Effect.runPromise(resolveCuaDriverExecutable()),
     resolveExecutable: resolveCuaDriverExecutable,
     // Linux ships as an AppImage, whose mount is somewhere else at each launch, so the command the
@@ -1583,8 +1615,9 @@ export async function createApplicationServices({
    * which an MCP client of OpenBot's could not see: the tools report only the sessions of the lease
    * that asks, and the agent's lease is its own.
    */
-  const computerUseReads = new CuaDriverDaemonClient(() =>
-    cuaDriver.mcpServerForProviders() ? cuaDriver.socketPath() : null,
+  const computerUseReads = new CuaDriverDaemonClient(
+    () => (cuaDriver.mcpServerForProviders() ? cuaDriver.socketPath() : null),
+    privatePlanningAdmission,
   );
   const computerUseHighlight = new ComputerUseHighlightController({
     createWindow: createComputerUseHighlightWindow,
@@ -1705,6 +1738,7 @@ export async function createApplicationServices({
     screenCapture: hasSeparateAgentDisplay(process.platform)
       ? null
       : new ScreenCapturer({
+          admission: privatePlanningAdmission,
           platform: process.platform,
           screenAccess: () => systemPreferences.getMediaAccessStatus("screen"),
           displays: () => screen.getAllDisplays(),
@@ -2085,6 +2119,7 @@ export async function createApplicationServices({
   });
   const userData = app.getPath("userData");
   const storageSources = {
+    protectedFiles: store.database.protectedFiles,
     roots: {
       database: store.database.path,
       downloads: store.downloadsRoot,
@@ -2331,6 +2366,7 @@ export async function createApplicationServices({
   );
   // The same owners the Settings screens write through, so an import has their checks and restarts.
   const instanceTransfer = new InstanceTransferService({
+    protectedFiles: store.database.protectedFiles,
     agents: service,
     skills: { library: () => skills.requireLocalLibrary(), installLocal: (input) => skills.installLocal(input) },
     sharedRoot: store.sharedRoot,
@@ -2387,6 +2423,7 @@ export async function createApplicationServices({
   const pushNotificationStore = new PushNotificationStore(join(app.getPath("userData"), PUSH_NOTIFICATION_FILE));
   await runCauseEffect(pushNotificationStore.load());
   const host = new HostService({
+    privatePlanningNative,
     appVersion: app.getVersion(),
     store: teamStore,
     agents: service,
@@ -2812,6 +2849,28 @@ export async function createApplicationServices({
       }),
     },
   );
+  const localPlanningAuthority = new LocalPlanningAuthority(store.database.localIdentity);
+  const localPlanning = new LocalPlanningMainService({
+    authority: localPlanningAuthority,
+    domain: new LocalPlanningService({
+      authority: localPlanningAuthority,
+      records: store.database.localPlanningRecords,
+      drafts: store.database.localPlanningDrafts,
+    }),
+    windows: localPlanningWindows,
+    admission: privatePlanningAdmission,
+    native: privatePlanningNative,
+    isLocal: () => remoteServers.activeServerId === LOCAL_SERVER_ID,
+    supported: () => privatePlanningSupported(cuaDriver.executablePath(), remoteDesktopRuntime),
+    prepareExit: (contents, value) => {
+      const window = BrowserWindow.getAllWindows().find((window) => window.webContents === contents);
+      sendToRenderer(window, IPC_ENDPOINTS.localPlanning.prepareExit, value);
+    },
+    changed: (contents, value) => {
+      const window = BrowserWindow.getAllWindows().find((window) => window.webContents === contents);
+      sendToRenderer(window, IPC_ENDPOINTS.localPlanning.changed, value);
+    },
+  });
   // A server joined or revoked on another device of this account. Signal carries it to every socket
   // the account holds, so the phone's join reaches this computer in the second it happens rather
   // than at the next account check. The refresh itself belongs to the entry point, which owns the
@@ -2875,7 +2934,7 @@ export async function createApplicationServices({
     );
   }
   configureAttachmentProtocol({ mailbox, agents: service, remoteServers });
-  configureServerLogoProtocols({ teamStore, remoteServers });
+  configureServerLogoProtocols({ teamStore, remoteServers, protectedFiles: service.protectedFiles });
   // After the servers: the view it opens belongs to one of them, and it has to stop before they do.
   const browserView = new BrowserViewClient({
     servers: remoteServers,
@@ -3250,6 +3309,14 @@ export async function createApplicationServices({
   );
 
   return {
+    bindMainWindow: (window) => {
+      bindProfileWindow(window);
+      browser.setMainWindow(window);
+      browserDock.setMainWindow(window);
+      browserPictureInPicture.setMainWindow(window);
+    },
+    localPlanning,
+    localPlanningWindows,
     service,
     routineFlows: routineFlowRuntime,
     workflows: workflowRuntime,

@@ -53,6 +53,7 @@ import { type AgentNotificationLevelStore, OWNER_NOTIFICATION_KEY } from "./agen
 import { BrowserViewGateway } from "./browser-view-gateway";
 import type { RemoteHostTicketHome, VerifiedRemoteSessionTicket } from "./central-auth-manager";
 import { LiveActivityPushService, LiveActivitySendFailure } from "./live-activity-push";
+import type { PrivatePlanningNative } from "./private-planning-native";
 import type { PushNotificationStore } from "./push-notification-store";
 import {
   type NotificationRelayRequest,
@@ -89,6 +90,7 @@ interface HostEvents {
 type ForwardedApiOptions = ConstructorParameters<typeof TeamApiServer>[0];
 
 interface HostServiceOptions {
+  privatePlanningNative: PrivatePlanningNative;
   channels?: ChannelService;
   mcpServers?: ForwardedApiOptions["mcpServers"];
   mcpSignIns?: ForwardedApiOptions["mcpSignIns"];
@@ -278,6 +280,7 @@ export class HostService extends EventEmitter<HostEvents> {
     this.#status = initialHostStatus(options.store.getIdentity(), options.unattended ?? false);
     const logDirectory = options.logDirectory;
     this.#remoteScreen = new RemoteScreenGateway({
+      privatePlanningNative: options.privatePlanningNative,
       platform: options.platform ?? normalizeRemoteDesktopPlatform(process.platform),
       unattended: options.unattended ?? false,
       runtimePaths: options.remoteDesktopRuntimePaths ?? null,

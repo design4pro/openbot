@@ -1182,53 +1182,62 @@ export class OpenBotToolRouter {
     if (!agentComputerUseEnabled(agent)) return openBotToolFailure(sourceText("error.agent.screenCaptureOff"));
     const host = this.#screenCapture;
     if (!host) return openBotToolFailure(sourceText("error.agent.screenCaptureUnavailable"));
-    const threadId = this.#conversation.publicThreadId(agent.id, params.threadId);
-    // A Slack, Discord or Telegram link sends each agent attachment of the turn to the platform. The
-    // screen of this computer must stay on this computer.
-    if (this.#messaging.store.linkForThread(threadId)) {
-      return openBotToolFailure(sourceText("error.agent.screenCaptureShared"));
-    }
-    // A channel shows the image to each member who reads it, so each capture asks, with Full access too.
-    const channelId = this.#channels.store.channelForThread(threadId);
-    if (params.tool === "list_capture_sources") {
-      const sources = yield* Effect.result(host.listSources());
-      return Result.isFailure(sources) ? captureFailure(sources.failure) : openBotToolResult(sources.success);
-    }
-    const parsed = captureScreenToolSchema.safeParse(params.arguments, { reportInput: true });
-    if (!parsed.success) return openBotToolFailure(profileToolErrorMessage(parsed.error));
-    const capture = parsed.data;
-    const messageId = responseAttachmentMessageId(params.threadId, params.turnId, params.callId);
-    if (this.#conversation.ensureSnapshot(agent.id, threadId).messages.some(({ id }) => id === messageId)) {
-      return openBotToolResult({ status: "shown", messageId });
-    }
-    const target = yield* this.#captureApprovalReason(host, capture);
-    if (typeof target !== "string") return target;
-    const channelName = channelId ? this.#channels.store.get(channelId).name : null;
-    const reason =
-      channelName === null
-        ? target
-        : `${target} ${sourceText("status.agent.screenCaptureChannel", { channel: channelName })}`;
-    const decision = yield* this.#attention.awaitToolApproval(
-      client,
-      request,
-      {
-        requestId: request.id,
-        agentId: agent.id,
-        threadId,
-        turnId: params.turnId,
-        kind: "permissions",
-        command: null,
-        cwd: null,
-        reason,
-        grantRoot: null,
-        permissions: null,
-      },
-      { alwaysAsk: channelId !== null },
+    const result = yield* Effect.result(
+      host.withCaptureLease(
+        Effect.gen({ self: this }, function* () {
+          const threadId = this.#conversation.publicThreadId(agent.id, params.threadId);
+          // A Slack, Discord or Telegram link sends each agent attachment of the turn to the platform. The
+          // screen of this computer must stay on this computer.
+          if (this.#messaging.store.linkForThread(threadId)) {
+            return openBotToolFailure(sourceText("error.agent.screenCaptureShared"));
+          }
+          // A channel shows the image to each member who reads it, so each capture asks, with Full access too.
+          const channelId = this.#channels.store.channelForThread(threadId);
+          if (params.tool === "list_capture_sources") {
+            const sources = yield* Effect.result(host.listSources());
+            return Result.isFailure(sources) ? captureFailure(sources.failure) : openBotToolResult(sources.success);
+          }
+          const parsed = captureScreenToolSchema.safeParse(params.arguments, { reportInput: true });
+          if (!parsed.success) return openBotToolFailure(profileToolErrorMessage(parsed.error));
+          const capture = parsed.data;
+          const messageId = responseAttachmentMessageId(params.threadId, params.turnId, params.callId);
+          if (this.#conversation.ensureSnapshot(agent.id, threadId).messages.some(({ id }) => id === messageId)) {
+            return openBotToolResult({ status: "shown", messageId });
+          }
+          const target = yield* this.#captureApprovalReason(host, capture);
+          if (typeof target !== "string") return target;
+          const channelName = channelId ? this.#channels.store.get(channelId).name : null;
+          const reason =
+            channelName === null
+              ? target
+              : `${target} ${sourceText("status.agent.screenCaptureChannel", { channel: channelName })}`;
+          const decision = yield* this.#attention.awaitToolApproval(
+            client,
+            request,
+            {
+              requestId: request.id,
+              agentId: agent.id,
+              threadId,
+              turnId: params.turnId,
+              kind: "permissions",
+              command: null,
+              cwd: null,
+              reason,
+              grantRoot: null,
+              permissions: null,
+            },
+            { alwaysAsk: channelId !== null },
+          );
+          if (decision !== "accept") return openBotToolFailure(sourceText("error.agent.screenCaptureDeclined"));
+          const image = yield* Effect.result(host.capture(capture));
+          if (Result.isFailure(image)) return captureFailure(image.failure);
+          return yield* this.#showCapture(agent.id, threadId, params, messageId, image.success);
+        }),
+      ),
     );
-    if (decision !== "accept") return openBotToolFailure(sourceText("error.agent.screenCaptureDeclined"));
-    const image = yield* Effect.result(host.capture(capture));
-    if (Result.isFailure(image)) return captureFailure(image.failure);
-    return yield* this.#showCapture(agent.id, threadId, params, messageId, image.success);
+    if (Result.isSuccess(result)) return result.success;
+    if (result.failure._tag === "ScreenCaptureFailed") return captureFailure(result.failure);
+    return yield* result.failure;
   });
 
   /**

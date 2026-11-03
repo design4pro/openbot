@@ -458,7 +458,13 @@
     "./features/transfer/instance-transfer.css": "./src/features/transfer/instance-transfer.css",
     "./features/conversation/AgentSessionSettings": "./src/features/conversation/AgentSessionSettings.tsx",
     "./features/conversation/AgentSettingsPanel": "./src/features/conversation/AgentSettingsPanel.tsx",
-    "./features/conversation/ConversationHeader": "./src/features/conversation/ConversationHeader.tsx"
+    "./features/conversation/ConversationHeader": "./src/features/conversation/ConversationHeader.tsx",
+    "./features/work/WorkPlanning": "./src/features/work/WorkPlanning.tsx",
+    "./features/work/WorkExitDialog": "./src/features/work/WorkExitDialog.tsx",
+    "./features/work/ProjectForm": "./src/features/work/ProjectForm.tsx",
+    "./features/work/TicketForm": "./src/features/work/TicketForm.tsx",
+    "./features/work/MilestoneReview": "./src/features/work/MilestoneReview.tsx",
+    "./features/work/work.css": "./src/features/work/work.css"
   },
   "dependencies": {
     "@openbot/contracts": "workspace:*",

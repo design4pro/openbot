@@ -6,6 +6,7 @@ import {
   ChartArea,
   DropdownMenu,
   Ellipsis,
+  Folder,
   ListChecks,
   MotionTooltip,
   Pin,
@@ -174,6 +175,7 @@ export type PageRailPage =
   | "routines"
   | "workflows"
   | "tasks"
+  | "work"
   | "schedule"
   | "usage"
   | "marketplace"
@@ -201,6 +203,7 @@ export interface PageRailProps {
   /** The answers of the custom agents on this computer that have a usage prompt. Absent on the web. */
   customAgentUsage?: readonly CustomAgentUsageRailRow[] | undefined;
   onAgents: () => void;
+  onWork?: (() => void) | undefined;
   /** Absent when the server has no routines. */
   onRoutines?: (() => void) | undefined;
   /** Absent when the server has no workflows. */
@@ -385,6 +388,13 @@ export function PageRail(props: PageRailProps) {
         <RailButton label={t("app.rail.agents")} current={props.current === "agents"} onClick={props.onAgents}>
           <Bot aria-hidden="true" />
         </RailButton>
+        <Show when={props.onWork}>
+          {(open) => (
+            <RailButton label={t("work.title")} current={props.current === "work"} onClick={() => open()()}>
+              <Folder aria-hidden="true" />
+            </RailButton>
+          )}
+        </Show>
         <For each={pages().filter((page) => props.pinned.includes(page.id))} keyed={(page) => page.id}>
           {(page) => (
             <RailButton label={page().label} current={props.current === page().id} onClick={page().open}>

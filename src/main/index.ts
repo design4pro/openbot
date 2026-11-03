@@ -78,6 +78,7 @@ import { hostedServerIpcHandlers } from "./ipc/hosted-server-handlers";
 import { hostedSiteIpcHandlers } from "./ipc/hosted-site-handlers";
 import { instanceTransferIpcHandlers } from "./ipc/instance-transfer-handlers";
 import { licenseIpcHandlers } from "./ipc/license-handlers";
+import { localPlanningIpcHandlers } from "./ipc/local-planning-handlers";
 import { localServerIpcHandlers } from "./ipc/local-server-handlers";
 import { macAutomationIpcHandlers } from "./ipc/mac-automation-handlers";
 import { marketplaceAgentIpcHandlers } from "./ipc/marketplace-agent-handlers";
@@ -440,16 +441,21 @@ const windows = createMainWindowController({
   keepRunningInBackground: () => services?.appBehavior.keepRunningInBackground ?? false,
   getServices: () => services,
   getTranslate: () => services?.language.translate ?? translateFor(resolveLocale("system", app.getLocale())),
-  onRendererLoadStarted: () => {
+  onRendererLoadStarted: (contents) => {
+    services?.localPlanning.invalidateScopes();
+    services?.localPlanningWindows.mainNavigated(contents);
     deepLinkReceiverReady = false;
     filePreviewPages.clear();
   },
-  onRendererGone: () => {
+  onRendererGone: (contents) => {
+    services?.localPlanning.rendererGone(contents);
     deepLinkReceiverReady = false;
     filePreviewPages.clear();
     services?.browser.releaseUserControlHeldBy({ kind: "local" });
   },
   onMainWindowCreated: (window) => {
+    services?.bindMainWindow(window);
+    services?.localPlanningWindows.registerMain(window.webContents);
     attachWindowsSessionEndHandlers(window);
     attachQuitOnMainWindowClose(window);
   },
@@ -502,6 +508,7 @@ function applyAppIconColor(color: AppLogoColor): void {
 function attachQuitOnMainWindowClose(window: BrowserWindow): void {
   if (process.platform === "darwin") return;
   window.on("closed", () => {
+    if (windows.replacingPrivateRenderers()) return;
     recordExit("main_window_closed");
     // `quit`, not a teardown of its own: `before-quit` below is what OpenBot shuts down through,
     // and it already ignores a second request while the first one runs.
@@ -559,6 +566,7 @@ function attachWindowsSessionEndHandlers(window: BrowserWindow): void {
 }
 
 function registerIpcHandlers({
+  localPlanning,
   service,
   signInRelayClient,
   relayedMessagingInstalls,
@@ -655,6 +663,7 @@ function registerIpcHandlers({
   const getDialogParent = () => windows.getChatWindows().find((window) => window.isFocused()) ?? windowHolder.current;
 
   registerIpcGroups({
+    ...localPlanningIpcHandlers({ localPlanning }),
     ...appIpcHandlers({
       service,
       mailbox,
@@ -827,6 +836,7 @@ function registerIpcHandlers({
       translate: language.translate,
     }),
     ...storageIpcHandlers({
+      protectedFiles: service.protectedFiles,
       storage: storageUsage,
       machine: machineAlerts,
       providerRuntimes,
@@ -1200,6 +1210,7 @@ if (!hasSingleInstanceLock) {
         quitting: () => quitStarted,
       });
       services = built;
+      built.localPlanningWindows.registerMain(mainWindow.webContents);
       performance.mark("openbot:services-built");
       // `forwardCentralAuth` reaches the host, the remote servers and analytics only through
       // `services`, so every account change announced during construction was dropped.
@@ -1314,6 +1325,7 @@ if (!hasSingleInstanceLock) {
       built.onePasswordConnector.onChanged(forwardOnePasswordConnectorStatus);
       built.bitwardenConnector.onChanged(forwardBitwardenConnectorStatus);
       built.vault.onChanged(forwardVaultState);
+      remoteServers.on("selectionStarted", () => built.localPlanning.invalidateScopes());
       remoteServers.on("changed", forwardServers);
       remoteServers.on("agent", (serverId, event, bufferedLive) => {
         forwardAgentEvent(serverId, event, bufferedLive);
@@ -1564,7 +1576,7 @@ if (!hasSingleInstanceLock) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") app.quit();
+  if (process.platform !== "darwin" && !windows.replacingPrivateRenderers()) app.quit();
 });
 
 app.on("before-quit", (event) => {

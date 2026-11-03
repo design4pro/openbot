@@ -17,6 +17,7 @@ import { join, resolve } from "node:path";
 import { AGENT_PROVIDERS } from "@openbot/contracts/ipc";
 import { Effect } from "effect";
 import type { AgentBrowserHost } from "../src/backend/agent/turn-lifecycle";
+import { nativePlanningFixture } from "./project-planning/native-fixture";
 
 const OUT = resolve(import.meta.dirname, "../.openbot-build/provider-exit-session-e2e");
 const root = await mkdtemp(join(tmpdir(), "openbot-provider-exit-"));
@@ -239,6 +240,7 @@ function driverRuntime(name: string) {
   const daemon: { child: ChildProcess | null } = { child: null };
   const quit = { started: false };
   const runtime = new CuaDriverRuntime({
+    privatePlanningNative: nativePlanningFixture(join(driverRoot, `${name}-privacy`)).native,
     executable: fakeDriver,
     endpoint: { kind: "unix-socket", directory: join(driverRoot, name) },
     supported: true,

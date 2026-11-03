@@ -1,3 +1,4 @@
+import type { ProtectedProfileFiles } from "./protected-profile-files";
 // Storage and files: what the host keeps on disk, measured for the Storage tab, the agent Files
 // detail and the chat Files panel. Files come from the mailbox state and their chats from the
 // database; folders are walked with a bound. Nothing here follows a symbolic link, and nothing here
@@ -52,6 +53,7 @@ export interface StorageAgent {
 }
 
 export interface StorageUsageSources {
+  protectedFiles?: ProtectedProfileFiles;
   roots: StorageRoots;
   database: () => DatabaseSync;
   mailbox: {
@@ -325,6 +327,10 @@ export class StorageUsageScanner {
     const seen = new Set<string>();
     const selected: Omit<MeasuredFile, "bytes" | "status" | "modifiedAt">[] = [];
     for (const stored of this.#sources.mailbox.listStoredFiles()) {
+      if (this.#sources.protectedFiles) {
+        const allowed = yield* Effect.result(this.#sources.protectedFiles.assertPathAllowed(stored.path));
+        if (allowed._tag === "Failure") continue;
+      }
       if (seen.has(stored.attachment.id)) continue;
       const shown = [...(placements.get(stored.attachment.id) ?? [])].sort((left, right) =>
         left.createdAt.localeCompare(right.createdAt),

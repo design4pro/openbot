@@ -36,7 +36,7 @@ import { activeServerId, serversPort } from "./servers-port";
  */
 const ServerSelection = createSimpleContext({
   name: "Server selection",
-  init: () => {
+  init: (props: { beforeScopeExit?: () => Promise<boolean> }) => {
     const { servers, setServers, beginServerSelection } = useServers();
     const { pendingInviteUrl, setPendingInviteUrl, saveSetup } = useSetup();
     const { setSkillsMarketplaceOpen } = useSettings();
@@ -62,6 +62,7 @@ const ServerSelection = createSimpleContext({
       // Main has one active server for the app. A chat window stays on its own server, so a switch
       // from it would move the main window instead.
       if (chatWindow) return false;
+      if (props.beforeScopeExit && !(await props.beforeScopeExit())) return false;
       const selectionIsCurrent = beginServerSelection();
       const analytics = desktopAnalytics.scope();
       const previousServerId = servers().find((server) => server.active)?.id;
@@ -169,6 +170,7 @@ const ServerSelection = createSimpleContext({
     );
 
     async function joinServer(input: { inviteUrl: string }): Promise<void> {
+      if (props.beforeScopeExit && !(await props.beforeScopeExit())) return;
       const analytics = desktopAnalytics.scope();
       const entryPoint = pendingInviteUrl() ? "invite_deep_link" : "in_app";
       try {
@@ -189,6 +191,7 @@ const ServerSelection = createSimpleContext({
 
     /** Creates a server on this computer and opens it. Main resolves when the desktop is connected to it. */
     async function createLocalServer(name: string): Promise<void> {
+      if (props.beforeScopeExit && !(await props.beforeScopeExit())) return;
       const server = await serversPort().localServers.create(name);
       await selectServer(server.id, false);
     }

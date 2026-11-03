@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { PrivatePlanningAdmission } from "./private-planning-admission";
 // OpenBot's own read-only connection to the Computer Use daemon.
 //
 // The rim asks the daemon the same two questions many times a second: which agent holds the
@@ -62,11 +64,13 @@ interface PendingRequest {
 /** The reads the rim needs, over one connection that outlives them. */
 export class CuaDriverDaemonClient {
   readonly #socketPath: () => string | null;
+  readonly #admission: PrivatePlanningAdmission;
   #socket: Socket | null = null;
   #pending: PendingRequest[] = [];
   #buffer = "";
 
-  constructor(socketPath: () => string | null) {
+  constructor(socketPath: () => string | null, admission: PrivatePlanningAdmission) {
+    this.#admission = admission;
     this.#socketPath = socketPath;
   }
 
@@ -116,6 +120,20 @@ export class CuaDriverDaemonClient {
   }
 
   #request = Effect.fn("CuaDriverDaemon.request")(function* (this: CuaDriverDaemonClient, payload: DaemonReadRequest) {
+    if (payload.method === "session_end") return yield* this.#performRequest(payload);
+    return yield* Effect.acquireUseRelease(
+      this.#admission
+        .acquirePublic(randomUUID(), "capture_sources")
+        .pipe(Effect.mapError((cause) => new CuaDriverFailure({ cause }))),
+      () => this.#performRequest(payload),
+      (lease) => Effect.sync(() => lease.releaseVerified()),
+    );
+  });
+
+  #performRequest = Effect.fn("CuaDriverDaemon.performRequest")(function* (
+    this: CuaDriverDaemonClient,
+    payload: DaemonReadRequest,
+  ) {
     const socket = yield* this.#connection();
     return yield* Effect.callback<unknown, CuaDriverFailure>((resume) => {
       const pending: PendingRequest = {

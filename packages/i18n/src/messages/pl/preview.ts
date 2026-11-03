@@ -5,7 +5,6 @@ export const messages = {
   "preview.panel.label": "Podgląd pliku",
   "preview.panel.resize": "Zmień rozmiar podglądu pliku",
   "preview.panel.copy": "Kopiuj tekst pliku",
-  "preview.panel.openExternally": "Otwórz plik zewnętrznie",
   "preview.panel.download": "Pobierz plik",
   "preview.panel.reveal": "Pokaż plik w Finderze",
   "preview.panel.close": "Zamknij podgląd pliku",
@@ -19,7 +18,6 @@ export const messages = {
   "preview.unavailable": "Podgląd niedostępny.",
   "preview.unsupported.title": "Podgląd niedostępny",
   "preview.unsupported.description": "Ten typ pliku można otworzyć w domyślnej aplikacji.",
-  "preview.unsupported.openExternally": "Otwórz zewnętrznie",
   "preview.spreadsheet.readFailed": "Nie udało się odczytać tego arkusza kalkulacyjnego.",
   "preview.spreadsheet.truncated": "Podgląd ograniczony do pierwszych wierszy ({rows}) i kolumn ({columns}).",
 } as const satisfies PartialTranslation<typeof source>;

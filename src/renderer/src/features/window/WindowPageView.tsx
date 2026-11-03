@@ -1,6 +1,6 @@
 import { useText } from "@openbot/ui/text";
 import { Loading, Match, Show, Switch } from "solid-js";
-import { AgentUsagePanel, WorkflowsPage } from "../../lazy-views";
+import { AgentUsagePanel, WorkflowsPage, WorkPage } from "../../lazy-views";
 import { SkillsMarketplace } from "../../WorkspaceOverlays";
 import { SchedulePanel } from "../schedule/SchedulePanel";
 import { useServers } from "../servers/servers-context";
@@ -26,36 +26,45 @@ export function WindowPageView() {
     servers().find((server) => server.id === serverId)?.name ?? t("app.page.serverFallback");
   return (
     <Show
-      when={settingsKind() ? null : usage.state.serverId}
+      when={windowPage.page() !== "work"}
       fallback={
-        <Show when={settingsKind()} keyed fallback={<SkillsMarketplace />}>
-          {(kind) => <SettingsPage kind={kind} />}
-        </Show>
+        <Loading>
+          <WorkPage />
+        </Loading>
       }
     >
-      {(serverId) => (
-        <Switch
-          fallback={
-            <Loading>
-              <AgentUsagePanel
-                serverId={serverId()}
-                hostName={hostName(serverId())}
-                agentId={usage.state.agentId}
-                onBack={usage.closeUsage}
-              />
-            </Loading>
-          }
-        >
-          <Match when={usage.state.view === "schedule"}>
-            <SchedulePanel serverId={serverId()} hostName={hostName(serverId())} onBack={usage.closeUsage} />
-          </Match>
-          <Match when={usage.state.view === "workflows"}>
-            <Loading>
-              <WorkflowsPage serverId={serverId()} />
-            </Loading>
-          </Match>
-        </Switch>
-      )}
+      <Show
+        when={settingsKind() ? null : usage.state.serverId}
+        fallback={
+          <Show when={settingsKind()} keyed fallback={<SkillsMarketplace />}>
+            {(kind) => <SettingsPage kind={kind} />}
+          </Show>
+        }
+      >
+        {(serverId) => (
+          <Switch
+            fallback={
+              <Loading>
+                <AgentUsagePanel
+                  serverId={serverId()}
+                  hostName={hostName(serverId())}
+                  agentId={usage.state.agentId}
+                  onBack={usage.closeUsage}
+                />
+              </Loading>
+            }
+          >
+            <Match when={usage.state.view === "schedule"}>
+              <SchedulePanel serverId={serverId()} hostName={hostName(serverId())} onBack={usage.closeUsage} />
+            </Match>
+            <Match when={usage.state.view === "workflows"}>
+              <Loading>
+                <WorkflowsPage serverId={serverId()} />
+              </Loading>
+            </Match>
+          </Switch>
+        )}
+      </Show>
     </Show>
   );
 }

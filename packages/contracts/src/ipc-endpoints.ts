@@ -10,6 +10,29 @@ import type {
   ResetAgentSessionSettingInput,
   SetAgentSessionSettingInput,
 } from "./ipc-agent-session-settings";
+import type {
+  DecisionView,
+  DraftView,
+  MilestonePageQuery,
+  MilestoneView,
+  Page,
+  PageRequest,
+  PlanningAvailability,
+  PlanningChange,
+  PlanningCommand,
+  PlanningCommandResult,
+  PlanningExitConfirmation,
+  PlanningPrepareExit,
+  PlanningReply,
+  PlanningRequest,
+  PlanningSession,
+  ProjectPageQuery,
+  ProjectQuery,
+  ProjectView,
+  ReviewView,
+  TicketQuery,
+  TicketView,
+} from "./ipc-local-planning";
 // The one channel list. Each endpoint holds its wire value, the group it belongs to, and whether it
 // is a request the renderer invokes or an event the main process sends. That is what lets a
 // registrar bind its handlers as an object keyed by endpoint, so a channel with no handler, and a
@@ -812,6 +835,33 @@ export const IPC_ENDPOINTS = {
     /** Asks each provider's upstream for its latest release. Rejects when no source answered. */
     checkForUpdates: request<undefined, ProviderRuntimeSnapshot>()("provider-runtimes:check-for-updates"),
     event: event<ProviderRuntimeSnapshot>()("provider-runtimes:event"),
+  },
+  localPlanning: {
+    availability: request<undefined, PlanningReply<PlanningAvailability>>()("local-planning:availability"),
+    enter: request<undefined, PlanningReply<PlanningSession>>()("local-planning:enter"),
+    leave: request<{ privateEpoch: string }, PlanningReply<{ exitId: string }>>()("local-planning:leave"),
+    confirmExit: request<PlanningExitConfirmation, PlanningReply<void>>()("local-planning:confirm-exit"),
+    stopActivity: request<{ activityId: string }, PlanningReply<void>>()("local-planning:stop-activity"),
+    listProjects: request<PlanningRequest<ProjectQuery>, PlanningReply<Page<ProjectView>>>()(
+      "local-planning:list-projects",
+    ),
+    getProject: request<PlanningRequest<string>, PlanningReply<ProjectView>>()("local-planning:get-project"),
+    listMilestones: request<PlanningRequest<ProjectPageQuery>, PlanningReply<Page<MilestoneView>>>()(
+      "local-planning:list-milestones",
+    ),
+    listTickets: request<PlanningRequest<TicketQuery>, PlanningReply<Page<TicketView>>>()(
+      "local-planning:list-tickets",
+    ),
+    listReviews: request<PlanningRequest<MilestonePageQuery>, PlanningReply<Page<ReviewView>>>()(
+      "local-planning:list-reviews",
+    ),
+    getReview: request<PlanningRequest<string>, PlanningReply<{ review: ReviewView; decision: DecisionView | null }>>()(
+      "local-planning:get-review",
+    ),
+    listDrafts: request<PlanningRequest<PageRequest>, PlanningReply<Page<DraftView>>>()("local-planning:list-drafts"),
+    run: request<PlanningRequest<PlanningCommand>, PlanningReply<PlanningCommandResult>>()("local-planning:run"),
+    changed: event<PlanningChange>()("local-planning:changed"),
+    prepareExit: event<PlanningPrepareExit>()("local-planning:prepare-exit"),
   },
   voice: {
     /** The status of the model in use. */
@@ -1906,6 +1956,7 @@ export const IPC_GROUP_PATHS = {
   providers: "",
   providerRuntimes: "providerRuntimes",
   voice: "voice",
+  localPlanning: "localPlanning",
   dynamicIsland: "dynamicIsland",
   browserDock: "browserDock",
   computerUse: "computerUse",

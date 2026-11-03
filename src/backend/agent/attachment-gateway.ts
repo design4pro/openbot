@@ -13,6 +13,7 @@ import {
   attachmentSync,
 } from "../attachment-effects";
 import type { GeneratedAttachmentSource, MailboxStore } from "../mailbox-store";
+import type { ProtectedProfileFiles } from "../protected-profile-files";
 import { isWithin, rebaseLegacyWorkspacePath, sharedPathFromInput, workspacePathFromInput } from "../workspace-paths";
 import type { ConversationRuntime } from "./conversation-runtime";
 import { type OpenBotToolResponse, openBotToolResult } from "./routine-tools";
@@ -53,6 +54,7 @@ export interface AttachmentGatewayOptions {
   mailbox: MailboxStore;
   /** `AgentStore.sharedRoot`, passed as a string so this class never opens the store. */
   sharedRoot: string;
+  protectedFiles: ProtectedProfileFiles;
   hooks: AttachmentGatewayHooks;
 }
 
@@ -73,6 +75,7 @@ export class AttachmentGateway {
   readonly #mailbox: MailboxStore;
   readonly #sharedRoot: string;
   readonly #hooks: AttachmentGatewayHooks;
+  readonly #protectedFiles: ProtectedProfileFiles;
   readonly #inFlight = new Map<string, Deferred.Deferred<OpenBotToolResponse, AttachmentOperationError>>();
 
   constructor(options: AttachmentGatewayOptions) {
@@ -80,6 +83,7 @@ export class AttachmentGateway {
     this.#mailbox = options.mailbox;
     this.#sharedRoot = options.sharedRoot;
     this.#hooks = options.hooks;
+    this.#protectedFiles = options.protectedFiles;
   }
 
   readonly attachFiles = Effect.fn("AttachmentGateway.attachFiles")(function* (
@@ -346,6 +350,7 @@ export class AttachmentGateway {
         }
         const authorizedMetadata = attachmentResult(yield* Effect.result(attachmentCall(() => lstat(resolved))));
         if (authorizedMetadata.isSymbolicLink() || !authorizedMetadata.isFile()) continue;
+        const protectedFiles = this.#protectedFiles;
         let retained = false;
         return attachmentResult(
           yield* Effect.result(
@@ -361,6 +366,9 @@ export class AttachmentGateway {
                   ) {
                     return yield* attachmentFailure(new Error("The attachment changed while it was being opened."));
                   }
+                  yield* protectedFiles
+                    .assertOpenedFileAllowed(resolved, openedMetadata)
+                    .pipe(Effect.mapError(attachmentFailure));
                   retained = true;
                   return { path: resolved, handle };
                 }),

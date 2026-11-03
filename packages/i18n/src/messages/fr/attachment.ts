@@ -2,7 +2,6 @@ import type { PartialTranslation } from "../../message";
 import type { messages as source } from "../en/attachment";
 
 export const messages = {
-  "attachment.openFile": "Ouvrir le fichier",
   "attachment.preview": "Aperçu de {name}",
   "attachment.notFound": "Fichier introuvable",
   "attachment.download": "Télécharger {name}",

@@ -50,6 +50,7 @@ import { messages as usage } from "./usage";
 import { messages as vault } from "./vault";
 import { messages as webClient } from "./webClient";
 import { messages as window } from "./window";
+import { messages as work } from "./work";
 import { messages as workflow } from "./workflow";
 
 /**
@@ -104,6 +105,7 @@ export const ko = {
   ...sidebar,
   ...channel,
   ...diagram,
+  ...work,
   ...workflow,
   ...agent,
   ...agentTemplate,

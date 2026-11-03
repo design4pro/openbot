@@ -19,6 +19,8 @@ of something remote — which is what makes the first section below non-negotiab
 - A migration change needs data-preservation fixtures for every affected released schema, plus
   failure, rollback, retry, downgrade, missing-version, foreign-key and integrity coverage at the
   stable database boundary.
+- When fixtures name a future schema version, update both its insertion and cleanup when the latest
+  version changes. The future fixture must remain above the new latest version.
 - No automatic full-database backups: conversation history lives in SQLite, so their time and disk
   cost is unbounded. Make the migration itself safe instead.
 
@@ -38,6 +40,12 @@ change.
 The account service has a second, unrelated database — Cloudflare D1 — and its rule is the opposite
 shape: those migrations are reversible but race a deploy. `apps/auth-api/AGENTS.md` owns it — nothing in this
 directory touches `apps/auth-api/migrations/`.
+
+## Safe scripted edits
+
+When a scripted change edits several files, read each target inside its own edit function and assert
+unique anchors. Do not reuse the text buffer from a previous file. Check the changed-file diff before
+running checks or committing.
 
 ## Size
 

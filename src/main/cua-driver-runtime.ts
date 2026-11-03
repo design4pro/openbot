@@ -1,3 +1,5 @@
+import { PrivatePlanningError } from "./private-planning-admission";
+import type { PrivatePlanningNative } from "./private-planning-native";
 // The Computer Use driver: one long-lived daemon this process owns, and the MCP entry the
 // providers spawn against it.
 
@@ -102,6 +104,7 @@ interface SpawnDriverOptions {
   env: NodeJS.ProcessEnv;
   stdio: ["pipe", "pipe", "pipe"];
   windowsHide: boolean;
+  detached: boolean;
 }
 
 export type SpawnDriverProcess = (
@@ -246,6 +249,7 @@ export function cuaDriverCommandAlias(input: CuaDriverCommandAliasInput): string
 }
 
 export interface CuaDriverRuntimeOptions {
+  privatePlanningNative: PrivatePlanningNative;
   /** The resolved executable, or `null` when this computer has none. */
   executable: string | null;
   /**
@@ -304,6 +308,8 @@ export class CuaDriverRuntime {
   /** What the proxies are told to run: the alias once it is linked, the executable otherwise. */
   #command: string | null = null;
   #child: ChildProcess | null = null;
+  #stopping = false;
+  readonly #activityId = randomUUID();
   readonly #lifecycle = new LifecycleGate<void, CuaDriverFailure>();
   #state: ComputerUseState;
   /** Mutable, because a user may install the driver while OpenBot runs. */
@@ -316,6 +322,10 @@ export class CuaDriverRuntime {
     this.#executable = options.executable;
     this.#tap = options.actionTap ?? new CuaDriverActionTap();
     this.#state = initialState(options.platform, options.supported, options.executable);
+  }
+
+  executablePath(): string | null {
+    return this.#executable;
   }
 
   get lastState(): ComputerUseState {
@@ -441,22 +451,43 @@ export class CuaDriverRuntime {
    * them already.
    */
   start(): Effect.Effect<void, CuaDriverFailure> {
-    return this.#lifecycle.start(() =>
-      Effect.gen({ self: this }, function* () {
-        if (this.running()) return;
-        yield* this.#start();
-        this.#announceMcpServer();
-      }),
-    );
+    return Effect.acquireUseRelease(
+      this.#options.privatePlanningNative
+        .reserveStart("cua_runtime")
+        .pipe(Effect.mapError((cause) => new CuaDriverFailure({ cause }))),
+      () =>
+        this.#lifecycle.start(() =>
+          Effect.gen({ self: this }, function* () {
+            yield* this.#options.privatePlanningNative
+              .begin(this.#activityId, "cua_runtime", () =>
+                this.stop().pipe(Effect.mapError(() => new PrivatePlanningError({ code: "privacy_busy" }))),
+              )
+              .pipe(Effect.mapError((cause) => new CuaDriverFailure({ cause })));
+            if (this.running()) return;
+            yield* this.#start();
+            this.#options.privatePlanningNative.active(this.#activityId);
+            this.#announceMcpServer();
+          }),
+        ),
+      (lease) => Effect.sync(() => lease.releaseVerified()),
+    ).pipe(Effect.onError(() => Effect.sync(() => this.#options.privatePlanningNative.uncertain(this.#activityId))));
   }
 
   stop(): Effect.Effect<void, CuaDriverFailure> {
-    return this.#lifecycle.stop(() => this.#stop());
+    return this.#lifecycle
+      .stop(() => this.#stop())
+      .pipe(Effect.onError(() => Effect.sync(() => this.#options.privatePlanningNative.uncertain(this.#activityId))));
   }
 
   readonly state = Effect.fn("CuaDriver.state")(function* (
     this: CuaDriverRuntime,
   ): Effect.fn.Return<ComputerUseState, CuaDriverFailure> {
+    if (this.#options.privatePlanningNative.privateActive())
+      return {
+        status: "error",
+        permissions: this.#state.permissions,
+        message: sourceText("error.agent.privatePlanning"),
+      };
     if (!this.#options.supported) return this.#publish(this.#initialState());
     if (!this.#executable) {
       const resolve = this.#options.resolveExecutable;
@@ -464,12 +495,19 @@ export class CuaDriverRuntime {
     }
     if (!this.#executable) return this.#publish(this.#initialState());
     const started = yield* Effect.result(this.start());
-    if (Result.isFailure(started))
+    if (Result.isFailure(started)) {
+      if (this.#options.privatePlanningNative.privateActive())
+        return {
+          status: "error",
+          permissions: this.#state.permissions,
+          message: sourceText("error.agent.privatePlanning"),
+        };
       return this.#publish({
         status: "error",
         permissions: ungranted(this.#options.platform),
         message: sourceText("status.computerUse.driverNotStarted", { reason: describe(started.failure.cause) }),
       });
+    }
     const config = this.mcpServerConfig();
     if (!config)
       return this.#publish({
@@ -523,13 +561,24 @@ export class CuaDriverRuntime {
 
   #stop = Effect.fn("CuaDriver.stop")(function* (this: CuaDriverRuntime): Effect.fn.Return<void, CuaDriverFailure> {
     const child = this.#child;
-    this.#child = null;
-    yield* this.#tap.close();
-    if (child) yield* stopRemoteProcess(child).pipe(toCuaDriverFailure);
-    yield* this.#removeSocket();
+    this.#stopping = true;
+    yield* Effect.gen({ self: this }, function* () {
+      yield* this.#tap.close();
+      if (child) yield* stopRemoteProcess(child).pipe(toCuaDriverFailure);
+      yield* this.#options.privatePlanningNative
+        .finish(this.#activityId)
+        .pipe(Effect.mapError((cause) => new CuaDriverFailure({ cause })));
+      if (this.#child === child) this.#child = null;
+      yield* this.#removeSocket();
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          this.#stopping = false;
+        }),
+      ),
+    );
     // No announcement: a stop this process asked for is the teardown, and telling the providers
     // there would deactivate the very sessions the next run resumes.
-    this.#announcedMcpServer = "";
   });
 
   #start = Effect.fn("CuaDriver.start")(function* (this: CuaDriverRuntime): Effect.fn.Return<void, CuaDriverFailure> {
@@ -572,6 +621,7 @@ export class CuaDriverRuntime {
         // Nothing is written to standard input. It stays open only so that it closes when OpenBot ends.
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true,
+        detached: this.#options.platform !== "win32",
       }),
     );
     this.#child = child;
@@ -588,6 +638,8 @@ export class CuaDriverRuntime {
     child.once("exit", (code) => {
       if (this.#child !== child) return;
       this.#child = null;
+      if (this.#stopping) return;
+      this.#options.privatePlanningNative.uncertain(this.#activityId);
       this.#options.onDiagnostic?.(`OpenBot: the Computer Use driver stopped with code ${code ?? "unknown"}.\n`);
       this.#announceMcpServer();
       this.#publish({
@@ -596,6 +648,10 @@ export class CuaDriverRuntime {
         message: sourceText("status.computerUse.driverStopped"),
       });
     });
+
+    yield* this.#options.privatePlanningNative
+      .track(this.#activityId, child)
+      .pipe(Effect.mapError((cause) => new CuaDriverFailure({ cause })));
 
     const ready = yield* Effect.result(
       Effect.raceFirst(waitForDriverSocket(this.#options.waitForSocket, socketPath), Deferred.await(spawnFailure)),
@@ -699,6 +755,7 @@ export class CuaDriverRuntime {
   });
 
   #announceMcpServer(): void {
+    if (this.#options.privatePlanningNative.privateActive()) return;
     const config = this.mcpServerForProviders();
     const announced = config ? [config.command, ...config.args].join(" ") : "";
     if (announced === this.#announcedMcpServer) return;

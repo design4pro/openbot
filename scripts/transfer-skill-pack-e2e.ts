@@ -1,3 +1,4 @@
+import { ProtectedProfileFiles } from "../src/backend/protected-profile-files";
 // Run: bun scripts/transfer-skill-pack-e2e.ts
 // Report: .openbot-build/transfer-skill-pack-e2e.json
 // Installs a skill pack with more skills than an agent can have, exports the agent with the real
@@ -193,6 +194,7 @@ try {
     deleteAgent: () => Effect.die("A successful import deletes no agent."),
   };
   const transfer = new InstanceTransferService({
+    protectedFiles: new ProtectedProfileFiles(join(root, "openbot.db")),
     agents: transferAgents,
     skills: { library: () => library, installLocal: (input) => skills.installLocal(input) },
     settings: {

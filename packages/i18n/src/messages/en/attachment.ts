@@ -1,7 +1,8 @@
 import { defineMessages } from "../../message";
 
 export const messages = defineMessages("attachment", {
-  "attachment.openFile": "Open file",
+  "attachment.openCopyNamed": "Open a copy of {name}",
+  "attachment.openCopyHint": "Open a copy. Changes in the external app do not change the original file.",
   "attachment.preview": "Preview {name}",
   "attachment.notFound": "File not found",
   "attachment.download": "Download {name}",

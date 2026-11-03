@@ -127,6 +127,7 @@ import { BrowserProfileStore } from "../src/backend/browser-profiles/browser-pro
 import type { BrowserTabSession } from "../src/backend/browser-state";
 import { runCauseEffect } from "../src/backend/effect-boundary";
 import { OpenBotDatabase } from "../src/backend/openbot-database";
+import { ProtectedProfileFiles } from "../src/backend/protected-profile-files";
 import { RoutineResultError } from "../src/backend/routine-results/routine-results";
 import { TeamChatStore } from "../src/backend/team-chat-store";
 import { createAgentFolders } from "../src/main/agent-folders";
@@ -333,6 +334,7 @@ const NO_STATUS: AgentStatus = {
 let hidden: HiddenAgentsSnapshot = { agents: [{ agentId: "agent-pi", hiddenAt: new Date(0).toISOString() }] };
 
 const fakeAgents: TeamApiAgents = {
+  protectedFiles: new ProtectedProfileFiles(join(root, "openbot.db")),
   on: () => undefined,
   off: () => undefined,
   preferredProvider: () => "claude",

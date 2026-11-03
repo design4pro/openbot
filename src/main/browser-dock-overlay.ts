@@ -113,6 +113,25 @@ export class BrowserDockOverlay {
     this.#options = options;
   }
 
+  setMainWindow(window: BrowserWindow): void {
+    const previous = this.#options.mainWindow;
+    if (previous === window) return;
+    this.#cancelShrink();
+    this.#page = null;
+    this.#presentation = null;
+    const view = this.#view;
+    if (view && !view.webContents.isDestroyed()) {
+      if (!previous.isDestroyed()) previous.contentView.removeChildView(view);
+      window.contentView.addChildView(view);
+    }
+    for (const glass of this.#glassViews) {
+      if (!previous.isDestroyed()) previous.contentView.removeChildView(glass);
+      window.contentView.addChildView(glass);
+    }
+    this.#options.mainWindow = window;
+    this.#sync();
+  }
+
   get mainRendererIds(): ReadonlySet<number> {
     const window = this.#options.mainWindow;
     return new Set(window.isDestroyed() ? [] : [window.webContents.id]);

@@ -340,6 +340,7 @@ interface SunshineMoonlightRuntimeOptions {
   getDisplays: () => RemoteDesktopDisplay[];
   getIceServers: () => Effect.Effect<RemoteDesktopIceServer[], RemoteDesktopOperationError>;
   spawnProcess?: RemoteRuntimeSpawn;
+  onNativeChild?: (child: ChildProcess) => Effect.Effect<void, RemoteDesktopOperationError>;
   onDiagnostic?: ((source: "sunshine" | "moonlight", message: string) => void) | undefined;
   /** Called when Sunshine or Moonlight Web exits after the runtime started. */
   onExit?: (source: "sunshine" | "moonlight") => void;
@@ -578,7 +579,7 @@ export class SunshineMoonlightRuntime {
         const moonlightPort = this.#moonlightPort;
         if (moonlightPort === null) throw new Error("Moonlight port has not been allocated yet.");
         yield* desktopSync(() => this.#throwIfStopRequested());
-        yield* desktopSync(() => this.#startMoonlight(moonlightPort, iceEndpoint));
+        yield* this.#startMoonlight(moonlightPort, iceEndpoint);
         yield* waitForHttpEffect(
           `http://127.0.0.1:${moonlightPort}/api/authenticate`,
           {
@@ -802,10 +803,12 @@ export class SunshineMoonlightRuntime {
         env: { ...process.env, ...agentDisplayEnvironment(this.#options.platform), OPENBOT_REMOTE_SETUP: "1" },
         stdio: ["ignore", "pipe", "pipe"],
         windowsHide: true,
+        detached: this.#options.platform !== "win32",
       }),
     );
     this.#pipeDiagnostics(this.#sunshine, "sunshine");
     this.#watchExit(this.#sunshine, "sunshine");
+    if (this.#options.onNativeChild) yield* this.#options.onNativeChild(this.#sunshine);
     yield* waitForHttpsEffect(
       yield* desktopSync(() => this.#requireSunshineHttpsPort()),
       join(this.#options.stateDirectory, "sunshine-cert.pem"),
@@ -813,32 +816,40 @@ export class SunshineMoonlightRuntime {
     );
   });
 
-  #startMoonlight(port: number, iceEndpoint: string): void {
-    this.#moonlight = this.#spawn(
-      this.#options.paths.moonlightWebServer,
-      [
-        "--config-path",
-        join(this.#options.stateDirectory, "moonlight-config.json"),
-        "--bind-address",
-        `127.0.0.1:${port}`,
-        "--streamer-path",
-        this.#options.paths.moonlightStreamer,
-        "run",
-      ],
-      {
-        cwd: dirname(this.#options.paths.moonlightWebServer),
-        env: {
-          ...process.env,
-          OPENBOT_ICE_HELPER_URL: iceEndpoint,
-          OPENBOT_ICE_HELPER_TOKEN: this.#iceToken,
+  readonly #startMoonlight = Effect.fn("SunshineMoonlightRuntime.startMoonlight")(function* (
+    this: SunshineMoonlightRuntime,
+    port: number,
+    iceEndpoint: string,
+  ) {
+    this.#moonlight = yield* desktopSync(() =>
+      this.#spawn(
+        this.#options.paths.moonlightWebServer,
+        [
+          "--config-path",
+          join(this.#options.stateDirectory, "moonlight-config.json"),
+          "--bind-address",
+          `127.0.0.1:${port}`,
+          "--streamer-path",
+          this.#options.paths.moonlightStreamer,
+          "run",
+        ],
+        {
+          cwd: dirname(this.#options.paths.moonlightWebServer),
+          env: {
+            ...process.env,
+            OPENBOT_ICE_HELPER_URL: iceEndpoint,
+            OPENBOT_ICE_HELPER_TOKEN: this.#iceToken,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          detached: this.#options.platform !== "win32",
         },
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-      },
+      ),
     );
     this.#pipeDiagnostics(this.#moonlight, "moonlight");
     this.#watchExit(this.#moonlight, "moonlight");
-  }
+    if (this.#options.onNativeChild) yield* this.#options.onNativeChild(this.#moonlight);
+  });
 
   readonly #bootstrapMoonlightEffect = Effect.fn("SunshineMoonlightRuntime.bootstrapMoonlight")(function* (
     this: SunshineMoonlightRuntime,
@@ -1119,6 +1130,8 @@ export class SunshineMoonlightRuntime {
   // After a start, nothing waits on these processes. One that exits on its own would leave a runtime
   // that still reports itself started, and every new session would wait for a stream that never comes.
   #watchExit(child: ChildProcess, source: "sunshine" | "moonlight"): void {
+    // Tracking persists ownership before readiness waits; keep spawn errors handled during that I/O.
+    child.once("error", () => this.#options.onDiagnostic?.(source, "OpenBot: the native process could not start.\n"));
     child.once("exit", (code, signal) => {
       // A stop clears the field before it waits. A start in progress fails its own readiness wait.
       if ((source === "sunshine" ? this.#sunshine : this.#moonlight) !== child || !this.#state) return;

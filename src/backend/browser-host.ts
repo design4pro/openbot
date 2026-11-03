@@ -344,7 +344,7 @@ export interface BrowserMainPage {
 
 export class BrowserHost {
   static readonly CONTROL_IDLE_GRACE_MS = BrowserControlSessions.IDLE_GRACE_MS;
-  readonly #window: BrowserWindow;
+  #window: BrowserWindow;
   readonly #session: Session;
   /** The persistent sessions other than the shared one, by partition directory name. */
   readonly #tabSessions = new Map<string, Session>();
@@ -676,6 +676,19 @@ export class BrowserHost {
 
   getDisplayState(): { tabs: BrowserTab[]; activeTabId: string | null } {
     return { tabs: this.listTabs(), activeTabId: this.#activeTabId };
+  }
+
+  /** Keeps browser sessions when private exit replaces the application renderer. */
+  setMainWindow(window: BrowserWindow): void {
+    if (this.#window === window) return;
+    const previous = this.#window;
+    for (const [view, mounted] of this.#mountedViews) if (mounted === previous) this.#unmountView(view);
+    this.#window = window;
+    if (this.#target === "main") {
+      this.#visible = false;
+      this.#bounds = null;
+      this.#mainPageListener?.(null);
+    }
   }
 
   setPictureInPictureWindow(window: BrowserWindow | null): void {

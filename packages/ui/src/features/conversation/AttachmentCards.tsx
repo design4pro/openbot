@@ -150,13 +150,13 @@ export function AttachmentCards(props: {
                 >
                   <Download />
                 </Button>
-                <LabelTooltip content={t("attachment.openFile")}>
+                <LabelTooltip content={t("attachment.openCopyHint")}>
                   <LabelTooltipTrigger
                     as={Button}
                     variant="ghost"
                     type="button"
                     class="attachment-open-button"
-                    aria-label={t("attachment.open", { name: attachment.name })}
+                    aria-label={t("attachment.openCopyNamed", { name: attachment.name })}
                     onClick={() => props.onAction(attachment, "open")}
                   >
                     <ExternalLink />

@@ -46,6 +46,7 @@ import type { HighlightDisplay } from "./computer-use-highlight-window";
 import { shouldShowDevelopmentWindow } from "./development-profile";
 import { dynamicIslandNotchSizeForDisplay } from "./dynamic-island-window";
 import { type InterfaceSizeService, type InterfaceSizeStep, interfaceSizeShortcut } from "./interface-size-service";
+import type { PlanningRenderer } from "./local-planning-windows";
 import {
   createMainWindowBoundsRecorder,
   presentMainWindow,
@@ -127,15 +128,17 @@ export interface MainWindowContext {
   /** A function, not a value: the saved language is read after the first window opens. */
   getTranslate: () => AppTranslate;
   /** A renderer load or committed document navigation resets delivery of queued links. */
-  onRendererLoadStarted: () => void;
+  onRendererLoadStarted: (contents: WebContents) => void;
   /** Main must release resources when a renderer can no longer run its own cleanup. */
-  onRendererGone: () => void;
+  onRendererGone: (contents: WebContents) => void;
   /** Where the entry point attaches the Windows session-end handlers, which read its own flags. */
   onMainWindowCreated: (window: BrowserWindow) => void;
   reportError: (message: string, error: unknown) => void;
 }
 
 export interface MainWindowController {
+  replacingPrivateRenderers: () => boolean;
+  replacePrivateRenderers: (contents: readonly PlanningRenderer[]) => Promise<void>;
   getMainWindow: () => BrowserWindow | null;
   /** The windows that each show one chat. They get the same live events as the main window. */
   getChatWindows: () => BrowserWindow[];
@@ -238,23 +241,24 @@ export function createMainWindowController({
     onMainWindowCreated(window);
     window.on("closed", () => {
       if (holder.current === window) holder.current = null;
-      // A chat window is a second view of a chat in the main window, so it does not outlive it.
-      for (const chat of chatWindows.values()) chat.window.close();
+      // Ordinary close ends the chat views. Private recreation retains their input.
+      if (!replacingPrivateRenderers) for (const chat of chatWindows.values()) chat.window.close();
     });
     window.on("move", () => rememberMainWindowBounds(window.getNormalBounds()));
     window.on("resize", () => rememberMainWindowBounds(window.getNormalBounds()));
 
+    const renderer = window.webContents;
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     // A started navigation can still be cancelled without replacing the live renderer.
-    window.webContents.on("did-navigate", onRendererLoadStarted);
+    renderer.on("did-navigate", () => onRendererLoadStarted(renderer));
     // Chromium keeps a zoom level for each origin, and the first load sets the origin, so the saved
     // size is applied on each navigation rather than once when the window is made.
     window.webContents.on("did-navigate", () => {
       const interfaceSize = getServices()?.interfaceSize;
       if (interfaceSize) window.webContents.setZoomFactor(interfaceSize.zoomFactor);
     });
-    window.webContents.on("render-process-gone", onRendererGone);
-    window.webContents.once("destroyed", onRendererGone);
+    renderer.on("render-process-gone", () => onRendererGone(renderer));
+    renderer.once("destroyed", () => onRendererGone(renderer));
     attachAppInput(window, getServices, getTranslate, { closesBrowserTabs: true });
     window.webContents.on("will-navigate", (event, targetUrl) => {
       if (!isTrustedRendererUrl(targetUrl)) event.preventDefault();
@@ -352,7 +356,7 @@ export function createMainWindowController({
   }
 
   function loadRenderer(window: BrowserWindow): Promise<void> {
-    onRendererLoadStarted();
+    onRendererLoadStarted(window.webContents);
     return window.loadURL(appRendererUrl(process.env.ELECTRON_RENDERER_URL).toString());
   }
 
@@ -374,7 +378,30 @@ export function createMainWindowController({
     return holder.load;
   }
 
+  let replacingPrivateRenderers = false;
+  async function replacePrivateRenderers(contents: readonly PlanningRenderer[]): Promise<void> {
+    replacingPrivateRenderers = true;
+    try {
+      for (const expected of contents) {
+        if (expected.isDestroyed()) continue;
+        const actual = webContents.fromId(expected.id);
+        if (actual !== expected) throw new Error("The private renderer identity changed.");
+        const window = BrowserWindow.fromWebContents(actual);
+        if (!window) throw new Error("The private renderer has no owning window.");
+        const destroyed = new Promise<void>((resolve) => actual.once("destroyed", () => resolve()));
+        window.destroy();
+        await destroyed;
+      }
+      // The new document starts with the generic shell; it has no private session.
+      await ensureMainWindow();
+    } finally {
+      replacingPrivateRenderers = false;
+    }
+  }
+
   return {
+    replacingPrivateRenderers: () => replacingPrivateRenderers,
+    replacePrivateRenderers,
     getMainWindow: () => holder.current,
     getChatWindows: () =>
       [...chatWindows.values()].map((chat) => chat.window).filter((window) => !window.isDestroyed()),

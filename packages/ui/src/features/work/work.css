@@ -1,0 +1,89 @@
+.work-planning {
+  overflow: auto;
+  pointer-events: none;
+  padding: calc(var(--left-header-height, 0px) + var(--openbot-space-8) + var(--openbot-space-8)) var(--openbot-space-6)
+    var(--openbot-space-6);
+  color: var(--openbot-text-primary);
+  min-width: 0;
+  height: 100%;
+}
+.work-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--openbot-space-6);
+}
+.work-list {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  flex: 1;
+  min-width: min(100%, 16rem);
+  gap: var(--openbot-space-2);
+}
+.work-detail {
+  flex: 3;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.work-form,
+.work-review {
+  display: flex;
+  flex-direction: column;
+  gap: var(--openbot-space-3);
+  margin-block: var(--openbot-space-4);
+}
+.work-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--openbot-space-2);
+}
+.work-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.work-draft {
+  border-top: 1px solid var(--openbot-border-strong);
+  padding-block: var(--openbot-space-2);
+  overflow-wrap: anywhere;
+}
+.work-exit-error {
+  position: fixed;
+  inset-inline: var(--openbot-space-6);
+  bottom: var(--openbot-space-6);
+  padding: var(--openbot-space-3);
+  background: var(--openbot-bg-surface);
+  color: var(--openbot-text-primary);
+  z-index: var(--openbot-layer-toast);
+}
+.work-local-entry {
+  position: fixed;
+  bottom: var(--openbot-space-6);
+  right: var(--openbot-space-6);
+  z-index: calc(var(--openbot-layer-dialog) + 1);
+  -webkit-app-region: no-drag;
+}
+
+.work-privacy-bar {
+  position: fixed;
+  top: calc(var(--openbot-space-8) + var(--openbot-space-4));
+  right: var(--openbot-space-3);
+  z-index: calc(var(--openbot-layer-dialog) + 1);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: calc(100% - var(--openbot-space-6));
+  gap: var(--openbot-space-2);
+  padding: var(--openbot-space-1) var(--openbot-space-2);
+  background: var(--openbot-bg-surface);
+  color: var(--openbot-text-primary);
+  -webkit-app-region: no-drag;
+}
+.work-privacy-bar[hidden] {
+  display: none;
+}
+
+/* The empty top row leaves the existing server menu reachable. */
+.work-planning > * {
+  pointer-events: auto;
+}
